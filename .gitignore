@@ -1,0 +1,26 @@
+# 便携工具链与运行时数据（不入库）
+tools/
+data/
+uploads/
+logs/
+*.zip
+
+# 构建产物
+hive/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# 运行日志
+logs-app.txt
+*.log
+
+# 系统
+Thumbs.db
+.DS_Store
+.claude/settings.local.json
