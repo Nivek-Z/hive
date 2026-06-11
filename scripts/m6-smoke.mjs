@@ -41,11 +41,22 @@ async function client(username) {
     };
 }
 
-const x = await client("xiaomi");
+// 用现注册的新用户测试（演示账号的"初啼"已在播种时解锁）
+const a0 = await client("afeng");
+const invites = await a0.rest("GET", "/hives/1/invites");
+const inviteCode = invites.data[0].code;
+const uname = "t" + Date.now().toString(36);
+const reg = await rest(null, "POST", "/auth/register",
+    { username: uname, password: "123456", nickname: "测试新蜂" });
+if (reg.code !== 0) fail("注册测试用户", JSON.stringify(reg));
+a0.close();
+
+const x = await client(uname);
+await x.rest("POST", `/invites/${inviteCode}/join`);
 const CH = 2; // 演示蜂巢「大厅」
 
-// 1. 小蜜首次发言 → FIRST_BUZZ 成就实时弹出
-x.send("MSG_SEND", { channelId: CH, content: "小蜜的第一条消息！", nonce: "m1" });
+// 1. 新蜂首次发言 → FIRST_BUZZ 成就实时弹出
+x.send("MSG_SEND", { channelId: CH, content: "新蜂的第一条消息！", nonce: "m1" });
 const ach = await x.wait((m) => m.type === "ACHIEVEMENT_UNLOCKED");
 if (ach.data.code !== "FIRST_BUZZ") fail("首次发言成就", JSON.stringify(ach.data));
 ok(`成就实时解锁推送（${ach.data.emoji} ${ach.data.name} +${ach.data.points}）`);

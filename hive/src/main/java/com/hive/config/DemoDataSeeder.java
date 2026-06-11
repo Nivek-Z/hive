@@ -10,6 +10,7 @@ import com.hive.model.dto.HiveDetailVO;
 import com.hive.model.dto.HiveReq;
 import com.hive.service.ChannelService;
 import com.hive.service.HiveService;
+import com.hive.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -30,15 +31,18 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final HiveService hiveService;
     private final ChannelService channelService;
+    private final MessageService messageService;
 
     public DemoDataSeeder(UserMapper userMapper, HiveMemberMapper memberMapper,
                           PasswordEncoder passwordEncoder,
-                          HiveService hiveService, ChannelService channelService) {
+                          HiveService hiveService, ChannelService channelService,
+                          MessageService messageService) {
         this.userMapper = userMapper;
         this.memberMapper = memberMapper;
         this.passwordEncoder = passwordEncoder;
         this.hiveService = hiveService;
         this.channelService = channelService;
+        this.messageService = messageService;
     }
 
     @Override
@@ -67,7 +71,26 @@ public class DemoDataSeeder implements CommandLineRunner {
         channelService.create(afeng, hive.id(),
                 new CreateChannelReq("深夜自习室", Channel.TYPE_TEXT, inner.id(), "凌晨三点见"));
 
+        // 大厅里的演示对话（顺带让演示账号解锁"初啼"成就，丰富成就墙）
+        hive.channels().stream()
+                .filter(c -> "大厅".equals(c.name()))
+                .findFirst()
+                .ifPresent(hall -> {
+                    say(afeng, hall.id(), "欢迎来到蜂巢！🐝 这里是 Java 程序设计大作业的演示社区");
+                    say(xiaomi, hall.id(), "哇，这个六边形头像和蜂蜜配色绝了 ✨");
+                    say(wengweng, hall.id(), "/roll");
+                    say(afeng, hall.id(), "输入 /help 看看彩蛋命令，或者发一句带 🎉 的话试试？");
+                });
+
         logger.info("已创建演示账号 afeng / xiaomi / wengweng（密码 123456）与演示蜂巢「{}」", hive.name());
+    }
+
+    private void say(long uid, long channelId, String content) {
+        try {
+            messageService.send(uid, channelId, content, "TEXT", null, null);
+        } catch (Exception e) {
+            logger.warn("演示消息发送失败：{}", e.getMessage());
+        }
     }
 
     private long createUser(String username, String nickname, String color) {
