@@ -24,8 +24,10 @@ import com.hive.model.dto.InviteVO;
 import com.hive.model.dto.MemberVO;
 import com.hive.model.dto.RoleVO;
 import com.hive.model.dto.UnreadRow;
+import com.hive.event.AppEvents;
 import com.hive.util.Ids;
 import com.hive.ws.WsPush;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +53,7 @@ public class HiveService {
     private final UserMapper userMapper;
     private final PermissionService permissionService;
     private final MessageService messageService;
+    private final ApplicationEventPublisher events;
     private final WsPush push;
 
     public HiveService(HiveMapper hiveMapper, HiveMemberMapper memberMapper,
@@ -58,7 +61,8 @@ public class HiveService {
                        RoleMapper roleMapper, MemberRoleMapper memberRoleMapper,
                        MessageMapper messageMapper, UserMapper userMapper,
                        PermissionService permissionService, MessageService messageService,
-                       WsPush push) {
+                       ApplicationEventPublisher events, WsPush push) {
+        this.events = events;
         this.hiveMapper = hiveMapper;
         this.memberMapper = memberMapper;
         this.channelMapper = channelMapper;
@@ -93,6 +97,7 @@ public class HiveService {
         createChannel(hive.getId(), category.getId(), Channel.TYPE_TEXT, "大厅", "什么都能聊的地方");
 
         createInviteInternal(hive.getId(), uid, 0, null);
+        events.publishEvent(new AppEvents.HiveCreated(uid));
         return detail(uid, hive.getId());
     }
 

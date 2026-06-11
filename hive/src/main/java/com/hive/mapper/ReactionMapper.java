@@ -35,4 +35,10 @@ public interface ReactionMapper {
     List<ReactionRow> listByRange(@Param("channelId") long channelId,
                                   @Param("minId") long minId,
                                   @Param("maxId") long maxId);
+
+    @Select("SELECT COUNT(*) FROM reactions WHERE message_id = #{messageId}")
+    int countOnMessage(long messageId);
+
+    @Select("SELECT COUNT(*) FROM reactions WHERE user_id = #{uid}")
+    long countByUser(long uid);
 }

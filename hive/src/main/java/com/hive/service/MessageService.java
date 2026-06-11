@@ -2,6 +2,7 @@ package com.hive.service;
 
 import com.hive.common.BizException;
 import com.hive.common.Permissions;
+import com.hive.event.AppEvents;
 import com.hive.mapper.ChannelMapper;
 import com.hive.mapper.ChannelMemberMapper;
 import com.hive.mapper.MessageMapper;
@@ -17,6 +18,7 @@ import com.hive.model.dto.MessageVO;
 import com.hive.model.dto.ReactionRow;
 import com.hive.model.dto.ReactionVO;
 import com.hive.ws.WsPush;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,12 +49,15 @@ public class MessageService {
     private final ChannelMemberMapper channelMemberMapper;
     private final UserMapper userMapper;
     private final PermissionService permissionService;
+    private final CommandService commandService;
+    private final ApplicationEventPublisher events;
     private final WsPush push;
 
     public MessageService(MessageMapper messageMapper, ReactionMapper reactionMapper,
                           ReadStateMapper readStateMapper, ChannelMapper channelMapper,
-                          ChannelMemberMapper channelMemberMapper,
-                          UserMapper userMapper, PermissionService permissionService, WsPush push) {
+                          ChannelMemberMapper channelMemberMapper, UserMapper userMapper,
+                          PermissionService permissionService, CommandService commandService,
+                          ApplicationEventPublisher events, WsPush push) {
         this.messageMapper = messageMapper;
         this.reactionMapper = reactionMapper;
         this.readStateMapper = readStateMapper;
@@ -60,6 +65,8 @@ public class MessageService {
         this.channelMemberMapper = channelMemberMapper;
         this.userMapper = userMapper;
         this.permissionService = permissionService;
+        this.commandService = commandService;
+        this.events = events;
         this.push = push;
     }
 
@@ -81,6 +88,13 @@ public class MessageService {
         requireCanSpeak(channel, uid,
                 Message.TYPE_IMAGE.equals(msgType) ? Permissions.ATTACH_FILES : Permissions.SEND_MESSAGES);
 
+        // 斜杠命令：执行后以系统消息广播，不落普通消息
+        if (Message.TYPE_TEXT.equals(msgType) && commandService.isCommand(content)) {
+            String result = commandService.execute(userMapper.findById(uid), content);
+            system(channelId, result);
+            return null;
+        }
+
         if (replyToId != null) {
             Message replyTo = messageMapper.findById(replyToId);
             if (replyTo == null || !replyTo.getChannelId().equals(channelId)) {
@@ -98,7 +112,22 @@ public class MessageService {
 
         MessageVO vo = messageMapper.findVOById(message.getId());
         broadcast(channel, "MSG_NEW", new MsgNewPayload(vo, nonce));
+        events.publishEvent(new AppEvents.MessageSent(uid, channelId, content, LocalDateTime.now()));
+        maybeEgg(channel, content);
         return vo;
+    }
+
+    /** 关键词彩蛋：命中后向频道广播全屏特效 */
+    private void maybeEgg(Channel channel, String content) {
+        String effect = null;
+        if (content.contains("生日快乐") || content.contains("🎉")) {
+            effect = "confetti";
+        } else if (content.contains("🐝") || content.contains("蜜蜂")) {
+            effect = "bees";
+        }
+        if (effect != null) {
+            broadcast(channel, "EGG", Map.of("effect", effect));
+        }
     }
 
     /** 系统消息（加入/踢出等事件），sender 为空 */
@@ -177,6 +206,7 @@ public class MessageService {
 
         if (add) {
             reactionMapper.add(messageId, uid, emoji);
+            events.publishEvent(new AppEvents.ReactionAdded(uid, messageId, message.getSenderId()));
         } else {
             reactionMapper.remove(messageId, uid, emoji);
         }

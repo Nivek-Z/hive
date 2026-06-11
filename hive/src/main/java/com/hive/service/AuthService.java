@@ -7,7 +7,9 @@ import com.hive.model.dto.LoginReq;
 import com.hive.model.dto.LoginResp;
 import com.hive.model.dto.RegisterReq;
 import com.hive.model.dto.UserVO;
+import com.hive.event.AppEvents;
 import com.hive.util.JwtUtil;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,11 +30,14 @@ public class AuthService {
     private final UserMapper userMapper;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher events;
 
-    public AuthService(UserMapper userMapper, JwtUtil jwtUtil, PasswordEncoder passwordEncoder) {
+    public AuthService(UserMapper userMapper, JwtUtil jwtUtil,
+                       PasswordEncoder passwordEncoder, ApplicationEventPublisher events) {
         this.userMapper = userMapper;
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = passwordEncoder;
+        this.events = events;
     }
 
     @Transactional
@@ -57,6 +62,7 @@ public class AuthService {
             throw new BizException("用户名或密码错误");
         }
         userMapper.touchLastSeen(user.getId());
+        events.publishEvent(new AppEvents.UserLoggedIn(user.getId()));
         return issueToken(user);
     }
 

@@ -12,7 +12,9 @@ import com.hive.model.dto.DmVO;
 import com.hive.model.dto.FriendRequestVO;
 import com.hive.model.dto.FriendVO;
 import com.hive.model.dto.UserVO;
+import com.hive.event.AppEvents;
 import com.hive.ws.WsPush;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,11 +33,13 @@ public class FriendService {
     private final ChannelMapper channelMapper;
     private final UserMapper userMapper;
     private final UserService userService;
+    private final ApplicationEventPublisher events;
     private final WsPush push;
 
     public FriendService(FriendshipMapper friendshipMapper, ChannelMemberMapper channelMemberMapper,
                          ChannelMapper channelMapper, UserMapper userMapper,
-                         UserService userService, WsPush push) {
+                         UserService userService, ApplicationEventPublisher events, WsPush push) {
+        this.events = events;
         this.friendshipMapper = friendshipMapper;
         this.channelMemberMapper = channelMemberMapper;
         this.channelMapper = channelMapper;
@@ -164,6 +168,7 @@ public class FriendService {
     }
 
     private void notifyAccepted(long requesterId, long addresseeId) {
+        events.publishEvent(new AppEvents.FriendAccepted(requesterId, addresseeId));
         push.toUser(requesterId, "FRIEND_EVENT", Map.of(
                 "kind", "ACCEPTED", "friend", UserVO.from(userMapper.findById(addresseeId))));
         push.toUser(addresseeId, "FRIEND_EVENT", Map.of(

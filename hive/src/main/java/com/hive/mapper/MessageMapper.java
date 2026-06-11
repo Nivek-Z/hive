@@ -1,7 +1,10 @@
 package com.hive.mapper;
 
 import com.hive.model.Message;
+import com.hive.model.dto.HeatRow;
 import com.hive.model.dto.MessageVO;
+import com.hive.model.dto.NameCount;
+import com.hive.model.dto.SearchHit;
 import com.hive.model.dto.UnreadRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -57,4 +60,54 @@ public interface MessageMapper {
             "WHERE m.deleted = 0 AND m.id > COALESCE(rs.last_read_message_id, 0) " +
             "GROUP BY m.channel_id")
     List<UnreadRow> unreadCounts(@Param("hiveId") long hiveId, @Param("userId") long userId);
+
+    // ---------- 成就判定用计数 ----------
+
+    @Select("SELECT COUNT(*) FROM messages WHERE sender_id = #{uid} AND deleted = 0")
+    long countBySender(long uid);
+
+    @Select("SELECT COUNT(*) FROM messages WHERE sender_id = #{uid} AND deleted = 0 " +
+            "AND created_at >= CURDATE()")
+    long countBySenderToday(long uid);
+
+    /** 最近 7 个自然日中有发言的天数（=7 即连续一周打卡） */
+    @Select("SELECT COUNT(DISTINCT DATE(created_at)) FROM messages " +
+            "WHERE sender_id = #{uid} AND deleted = 0 " +
+            "AND created_at >= CURDATE() - INTERVAL 6 DAY")
+    int countActiveDaysLast7(long uid);
+
+    // ---------- 数据可视化 ----------
+
+    /** 个人聊天热力图：过去一年逐日消息数 */
+    @Select("SELECT DATE(created_at) AS date, COUNT(*) AS count FROM messages " +
+            "WHERE sender_id = #{uid} AND deleted = 0 " +
+            "AND created_at >= CURDATE() - INTERVAL 364 DAY " +
+            "GROUP BY DATE(created_at) ORDER BY date")
+    List<HeatRow> heatmap(long uid);
+
+    /** 蜂巢近 7 日逐日消息量 */
+    @Select("SELECT DATE(m.created_at) AS date, COUNT(*) AS count FROM messages m " +
+            "JOIN channels c ON c.id = m.channel_id AND c.hive_id = #{hiveId} " +
+            "WHERE m.deleted = 0 AND m.created_at >= CURDATE() - INTERVAL 6 DAY " +
+            "GROUP BY DATE(m.created_at) ORDER BY date")
+    List<HeatRow> hiveDaily(long hiveId);
+
+    /** 蜂巢发言排行（前 5） */
+    @Select("SELECT u.nickname AS name, COUNT(*) AS count FROM messages m " +
+            "JOIN channels c ON c.id = m.channel_id AND c.hive_id = #{hiveId} " +
+            "JOIN users u ON u.id = m.sender_id " +
+            "WHERE m.deleted = 0 GROUP BY m.sender_id, u.nickname " +
+            "ORDER BY count DESC LIMIT 5")
+    List<NameCount> hiveTopSpeakers(long hiveId);
+
+    /** ngram 中文全文检索（NATURAL LANGUAGE MODE） */
+    @Select("SELECT m.id, m.channel_id, c.name AS channel_name, u.nickname AS sender_nickname, " +
+            "       m.content, m.created_at " +
+            "FROM messages m " +
+            "JOIN channels c ON c.id = m.channel_id AND c.hive_id = #{hiveId} " +
+            "LEFT JOIN users u ON u.id = m.sender_id " +
+            "WHERE m.deleted = 0 AND m.type = 'TEXT' " +
+            "AND MATCH(m.content) AGAINST(#{q} IN NATURAL LANGUAGE MODE) " +
+            "ORDER BY m.id DESC LIMIT 30")
+    List<SearchHit> search(@Param("hiveId") long hiveId, @Param("q") String q);
 }
