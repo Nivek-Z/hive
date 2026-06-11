@@ -7,8 +7,11 @@ import com.hive.model.Channel;
 import com.hive.model.dto.ChannelVO;
 import com.hive.model.dto.CreateChannelReq;
 import com.hive.model.dto.UpdateChannelReq;
+import com.hive.ws.WsPush;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 /**
  * 频道树业务："群中群"= 分区(CATEGORY)可嵌套分区，文字频道为叶子。
@@ -21,10 +24,17 @@ public class ChannelService {
 
     private final ChannelMapper channelMapper;
     private final PermissionService permissionService;
+    private final WsPush push;
 
-    public ChannelService(ChannelMapper channelMapper, PermissionService permissionService) {
+    public ChannelService(ChannelMapper channelMapper, PermissionService permissionService, WsPush push) {
         this.channelMapper = channelMapper;
         this.permissionService = permissionService;
+        this.push = push;
+    }
+
+    /** 通知全巢在线成员刷新频道树 */
+    private void notifyChanged(long hiveId) {
+        push.toHive(hiveId, "HIVE_EVENT", Map.of("kind", "CHANNELS_CHANGED", "hiveId", hiveId));
     }
 
     @Transactional
@@ -53,6 +63,7 @@ public class ChannelService {
         c.setTopic(req.topic() == null ? "" : req.topic());
         c.setPosition(0);
         channelMapper.insert(c);
+        notifyChanged(hiveId);
         return ChannelVO.from(c);
     }
 
@@ -63,6 +74,7 @@ public class ChannelService {
         String topic = req.topic() == null ? channel.getTopic() : req.topic();
         int position = req.position() == null ? channel.getPosition() : req.position();
         channelMapper.update(channelId, req.name(), topic, position);
+        notifyChanged(channel.getHiveId());
         return ChannelVO.from(channelMapper.findById(channelId));
     }
 
@@ -73,6 +85,7 @@ public class ChannelService {
         permissionService.require(channel.getHiveId(), uid, Permissions.MANAGE_CHANNELS);
         channelMapper.reparentChildren(channelId, channel.getParentId());
         channelMapper.delete(channelId);
+        notifyChanged(channel.getHiveId());
     }
 
     public Channel requireChannel(long channelId) {

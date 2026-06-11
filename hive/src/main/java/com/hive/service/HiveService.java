@@ -7,7 +7,9 @@ import com.hive.mapper.HiveMapper;
 import com.hive.mapper.HiveMemberMapper;
 import com.hive.mapper.InviteMapper;
 import com.hive.mapper.MemberRoleMapper;
+import com.hive.mapper.MessageMapper;
 import com.hive.mapper.RoleMapper;
+import com.hive.mapper.UserMapper;
 import com.hive.model.Channel;
 import com.hive.model.Hive;
 import com.hive.model.Invite;
@@ -20,7 +22,9 @@ import com.hive.model.dto.HiveReq;
 import com.hive.model.dto.HiveVO;
 import com.hive.model.dto.InviteVO;
 import com.hive.model.dto.MemberVO;
+import com.hive.model.dto.UnreadRow;
 import com.hive.util.Ids;
+import com.hive.ws.WsPush;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,19 +46,29 @@ public class HiveService {
     private final InviteMapper inviteMapper;
     private final RoleMapper roleMapper;
     private final MemberRoleMapper memberRoleMapper;
+    private final MessageMapper messageMapper;
+    private final UserMapper userMapper;
     private final PermissionService permissionService;
+    private final MessageService messageService;
+    private final WsPush push;
 
     public HiveService(HiveMapper hiveMapper, HiveMemberMapper memberMapper,
                        ChannelMapper channelMapper, InviteMapper inviteMapper,
                        RoleMapper roleMapper, MemberRoleMapper memberRoleMapper,
-                       PermissionService permissionService) {
+                       MessageMapper messageMapper, UserMapper userMapper,
+                       PermissionService permissionService, MessageService messageService,
+                       WsPush push) {
         this.hiveMapper = hiveMapper;
         this.memberMapper = memberMapper;
         this.channelMapper = channelMapper;
         this.inviteMapper = inviteMapper;
         this.roleMapper = roleMapper;
         this.memberRoleMapper = memberRoleMapper;
+        this.messageMapper = messageMapper;
+        this.userMapper = userMapper;
         this.permissionService = permissionService;
+        this.messageService = messageService;
+        this.push = push;
     }
 
     /**
@@ -91,9 +105,10 @@ public class HiveService {
         long perms = permissionService.effective(hive, uid);
         List<ChannelVO> channels = channelMapper.listByHive(hiveId).stream()
                 .map(ChannelVO::from).toList();
+        List<UnreadRow> unreads = messageMapper.unreadCounts(hiveId, uid);
         return new HiveDetailVO(hive.getId(), hive.getName(), hive.getDescription(),
                 hive.getIconColor(), hive.getOwnerId(),
-                memberMapper.countByHive(hiveId), perms, channels);
+                memberMapper.countByHive(hiveId), perms, channels, unreads);
     }
 
     @Transactional
@@ -120,6 +135,8 @@ public class HiveService {
         }
         memberRoleMapper.deleteByMember(hiveId, uid);
         memberMapper.delete(hiveId, uid);
+        announceAndRefresh(hiveId,
+                "👋 " + userMapper.findById(uid).getNickname() + " 离开了蜂巢", "MEMBER_LEFT");
     }
 
     // ---------- 成员管理 ----------
@@ -152,6 +169,10 @@ public class HiveService {
         permissionService.requireMember(hiveId, targetId);
         memberRoleMapper.deleteByMember(hiveId, targetId);
         memberMapper.delete(hiveId, targetId);
+        announceAndRefresh(hiveId,
+                "🚪 " + userMapper.findById(targetId).getNickname() + " 被请出了蜂巢", "MEMBER_LEFT");
+        // 单独通知被踢者，客户端移除该蜂巢入口
+        push.toUser(targetId, "HIVE_EVENT", Map.of("kind", "KICKED", "hiveId", hiveId));
     }
 
     @Transactional
@@ -205,10 +226,21 @@ public class HiveService {
             throw new BizException("邀请码已过期或已达使用上限");
         }
         memberMapper.insert(invite.getHiveId(), uid);
+        announceAndRefresh(invite.getHiveId(),
+                "🐝 " + userMapper.findById(uid).getNickname() + " 加入了蜂巢", "MEMBER_JOINED");
         return HiveVO.from(hive);
     }
 
     // ---------- 内部工具 ----------
+
+    /** 系统消息进"第一个文字频道" + HIVE_EVENT 通知全巢刷新侧栏 */
+    private void announceAndRefresh(long hiveId, String text, String kind) {
+        Channel hall = channelMapper.firstTextChannel(hiveId);
+        if (hall != null) {
+            messageService.system(hall.getId(), text);
+        }
+        push.toHive(hiveId, "HIVE_EVENT", Map.of("kind", kind, "hiveId", hiveId));
+    }
 
     private void createRole(long hiveId, String name, String color, long permissions,
                             int position, boolean isDefault) {

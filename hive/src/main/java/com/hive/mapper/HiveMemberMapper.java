@@ -38,6 +38,11 @@ public interface HiveMemberMapper {
     @Select("SELECT user_id FROM hive_members WHERE hive_id = #{hiveId}")
     List<Long> listUserIds(long hiveId);
 
+    /** 与某用户同巢的所有用户 id（含自己；上下线 PRESENCE 广播范围） */
+    @Select("SELECT DISTINCT user_id FROM hive_members " +
+            "WHERE hive_id IN (SELECT hive_id FROM hive_members WHERE user_id = #{userId})")
+    List<Long> listRelatedUserIds(long userId);
+
     @Update("UPDATE hive_members SET muted_until = #{until} " +
             "WHERE hive_id = #{hiveId} AND user_id = #{userId}")
     int updateMute(@Param("hiveId") long hiveId,

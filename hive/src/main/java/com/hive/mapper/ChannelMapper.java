@@ -26,6 +26,10 @@ public interface ChannelMapper {
             "ORDER BY COALESCE(parent_id, 0), position, id")
     List<Channel> listByHive(long hiveId);
 
+    /** 蜂巢的第一个文字频道（系统消息默认落点） */
+    @Select("SELECT * FROM channels WHERE hive_id = #{hiveId} AND type = 'TEXT' ORDER BY id LIMIT 1")
+    Channel firstTextChannel(long hiveId);
+
     @Update("UPDATE channels SET name = #{name}, topic = #{topic}, position = #{position} " +
             "WHERE id = #{id}")
     int update(@Param("id") long id,
