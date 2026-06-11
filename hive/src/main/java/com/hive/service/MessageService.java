@@ -3,6 +3,7 @@ package com.hive.service;
 import com.hive.common.BizException;
 import com.hive.common.Permissions;
 import com.hive.mapper.ChannelMapper;
+import com.hive.mapper.ChannelMemberMapper;
 import com.hive.mapper.MessageMapper;
 import com.hive.mapper.ReactionMapper;
 import com.hive.mapper.ReadStateMapper;
@@ -43,17 +44,20 @@ public class MessageService {
     private final ReactionMapper reactionMapper;
     private final ReadStateMapper readStateMapper;
     private final ChannelMapper channelMapper;
+    private final ChannelMemberMapper channelMemberMapper;
     private final UserMapper userMapper;
     private final PermissionService permissionService;
     private final WsPush push;
 
     public MessageService(MessageMapper messageMapper, ReactionMapper reactionMapper,
                           ReadStateMapper readStateMapper, ChannelMapper channelMapper,
+                          ChannelMemberMapper channelMemberMapper,
                           UserMapper userMapper, PermissionService permissionService, WsPush push) {
         this.messageMapper = messageMapper;
         this.reactionMapper = reactionMapper;
         this.readStateMapper = readStateMapper;
         this.channelMapper = channelMapper;
+        this.channelMemberMapper = channelMemberMapper;
         this.userMapper = userMapper;
         this.permissionService = permissionService;
         this.push = push;
@@ -119,9 +123,7 @@ public class MessageService {
     /** 正在输入提示（不落库，纯广播） */
     public void typing(long uid, long channelId) {
         Channel channel = requireChannel(channelId);
-        if (channel.getHiveId() != null) {
-            permissionService.requireMember(channel.getHiveId(), uid);
-        }
+        requireAccess(channel, uid);
         User user = userMapper.findById(uid);
         broadcast(channel, "TYPING", Map.of(
                 "channelId", channelId, "userId", uid, "nickname", user.getNickname()));
@@ -131,9 +133,7 @@ public class MessageService {
 
     public List<MessageVO> history(long uid, long channelId, Long before, Integer limit) {
         Channel channel = requireChannel(channelId);
-        if (channel.getHiveId() != null) {
-            permissionService.requireMember(channel.getHiveId(), uid);
-        }
+        requireAccess(channel, uid);
         int pageSize = limit == null ? 50 : Math.clamp(limit, 1, 100);
         long cursor = before == null ? Long.MAX_VALUE : before;
         List<MessageVO> page = new ArrayList<>(messageMapper.history(channelId, cursor, pageSize));
@@ -190,9 +190,7 @@ public class MessageService {
 
     public void markRead(long uid, long channelId, long lastMessageId) {
         Channel channel = requireChannel(channelId);
-        if (channel.getHiveId() != null) {
-            permissionService.requireMember(channel.getHiveId(), uid);
-        }
+        requireAccess(channel, uid);
         readStateMapper.upsert(uid, channelId, lastMessageId);
     }
 
@@ -209,10 +207,11 @@ public class MessageService {
         return channel;
     }
 
-    /** 发言资格：蜂巢成员 + 对应权限位 + 未被禁言（私聊频道 M4 开放） */
+    /** 发言资格：蜂巢频道=成员+权限位+未禁言；DM=会话参与者 */
     private void requireCanSpeak(Channel channel, long uid, long permissionBit) {
         if (channel.getHiveId() == null) {
-            throw new BizException("私聊功能即将开放");
+            requireDmMember(channel, uid);
+            return;
         }
         Hive hive = permissionService.requireHive(channel.getHiveId());
         HiveMember member = permissionService.requireMember(hive.getId(), uid);
@@ -226,10 +225,27 @@ public class MessageService {
         }
     }
 
-    /** 广播到频道受众：蜂巢频道→全体成员；DM→参与者（M4） */
+    /** 广播到频道受众：蜂巢频道→全体成员；DM→两位参与者 */
     private void broadcast(Channel channel, String type, Object data) {
         if (channel.getHiveId() != null) {
             push.toHive(channel.getHiveId(), type, data);
+        } else {
+            push.toUsers(channelMemberMapper.listUserIds(channel.getId()), type, data);
+        }
+    }
+
+    /** 频道访问资格：蜂巢频道=蜂巢成员；DM=会话参与者 */
+    private void requireAccess(Channel channel, long uid) {
+        if (channel.getHiveId() != null) {
+            permissionService.requireMember(channel.getHiveId(), uid);
+        } else {
+            requireDmMember(channel, uid);
+        }
+    }
+
+    private void requireDmMember(Channel channel, long uid) {
+        if (channelMemberMapper.countMember(channel.getId(), uid) == 0) {
+            throw BizException.forbidden("你不在这个会话中");
         }
     }
 

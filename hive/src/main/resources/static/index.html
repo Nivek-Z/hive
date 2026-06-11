@@ -65,6 +65,11 @@
 
   <!-- 第一栏：蜂巢条 -->
   <nav class="rail" id="rail">
+    <div class="rail-home-wrap">
+      <button class="rail-hex rail-home" id="btn-home" title="好友与私信">🍯</button>
+      <i class="home-dot hidden" id="home-dot"></i>
+    </div>
+    <div class="rail-sep"></div>
     <div class="rail-list" id="rail-list"></div>
     <div class="rail-bottom">
       <button class="rail-hex rail-action" id="btn-create-hive" title="创建蜂巢"><span>＋</span></button>
@@ -118,7 +123,7 @@
 
   <!-- 第四栏：成员列表 -->
   <aside class="members" id="members-pane">
-    <header class="members-head">成员 <span id="member-count"></span></header>
+    <header class="members-head"><span id="members-title">成员</span><span id="member-count"></span></header>
     <div class="member-list" id="member-list"></div>
   </aside>
 </div>

@@ -16,9 +16,13 @@ const P = {
 
 const state = {
     me: null,
+    mode: "hive",          // hive=蜂巢模式 / home=好友私信模式
     hives: [],
     detail: null,          // 当前蜂巢详情
     members: [],
+    friends: [],
+    requests: [],          // 收到的好友申请
+    dms: [],               // 私信会话列表
     currentHiveId: null,
     currentChannelId: null,
     messages: [],
@@ -69,6 +73,8 @@ async function enterApp() {
     state.socket = createSocket({ onEvent: handleWsEvent, onDown: () => {}, onOpen: onWsOpen });
     state.hives = await api.get("/hives");
     renderRail();
+    refreshDms();
+    refreshFriendsData();
     if (state.hives.length) {
         await selectHive(state.hives[0].id);
     } else {
@@ -130,7 +136,8 @@ function renderRail() {
     const list = $("rail-list");
     list.innerHTML = "";
     for (const h of state.hives) {
-        const item = el("div", "rail-item" + (h.id === state.currentHiveId ? " active" : ""));
+        const active = h.id === state.currentHiveId && state.mode === "hive";
+        const item = el("div", "rail-item" + (active ? " active" : ""));
         const pill = el("span", "pill");
         const hex = el("button", "rail-hex");
         hex.style.background = `linear-gradient(150deg, ${h.iconColor}, ${h.iconColor}88)`;
@@ -143,7 +150,12 @@ function renderRail() {
 }
 
 async function selectHive(hiveId) {
+    state.mode = "hive";
     state.currentHiveId = hiveId;
+    $("btn-home").classList.remove("active");
+    $("btn-hive-menu").style.visibility = "";
+    $("members-title").textContent = "成员";
+    setComposerVisible(true);
     renderRail();
     try {
         state.detail = await api.get(`/hives/${hiveId}`);
@@ -565,6 +577,10 @@ function handleWsEvent(type, d) {
         case "MSG_NEW": {
             const m = d.message;
             clearTypingOf(m.senderId);
+            // 私信消息：刷新会话列表（预览/排序/未读）与主页红点
+            if (!state.detail?.channels.some((c) => c.id === m.channelId)) {
+                setTimeout(refreshDms, 80);
+            }
             if (d.nonce) {
                 const idx = state.messages.findIndex((x) => x.nonce === d.nonce);
                 if (idx >= 0) {
@@ -613,6 +629,16 @@ function handleWsEvent(type, d) {
         case "PRESENCE":
             d.online ? state.online.add(d.userId) : state.online.delete(d.userId);
             renderMembers();
+            if (state.mode === "home") {
+                renderHomeMembers();
+                renderFriendsView();
+            }
+            break;
+
+        case "FRIEND_EVENT":
+            if (d.kind === "REQUEST_NEW") toast(`🐝 ${d.from.nickname} 请求加你为好友`, "ok");
+            if (d.kind === "ACCEPTED") toast(`🎉 你和 ${d.friend.nickname} 已成为好友`, "ok");
+            refreshAllHome();
             break;
 
         case "HIVE_EVENT":
@@ -646,9 +672,10 @@ function handleHiveEvent(d) {
 }
 
 function bumpUnread(channelId) {
+    // 私信未读由 refreshDms 统一计算
     if (!state.detail?.channels.some((c) => c.id === channelId)) return;
     state.unreads.set(channelId, (state.unreads.get(channelId) ?? 0) + 1);
-    renderTree();
+    if (state.mode === "hive") renderTree();
 }
 
 function clearTypingOf(userId) {
@@ -709,6 +736,20 @@ function memberCtxMenu(e, m) {
     const items = [];
     const muted = m.mutedUntil && new Date(m.mutedUntil) > new Date();
     items.push({ icon: "🐝", label: `@${m.username} · ${m.nickname}`, onClick: () => {} });
+    if (m.userId !== state.me.id) {
+        items.push("-");
+        items.push({ icon: "💬", label: "发私信", onClick: () => openDmWith(m.userId) });
+        if (!state.friends.some((f) => f.userId === m.userId)) {
+            items.push({
+                icon: "🤝", label: "加为好友", onClick: async () => {
+                    try {
+                        await api.post("/friends/requests", { username: m.username });
+                        toast("好友申请已发送 🐝", "ok");
+                    } catch (err) { toast(err.message, "err"); }
+                },
+            });
+        }
+    }
     if (m.userId !== state.me.id && !m.owner) {
         if (can(P.MUTE)) {
             items.push("-");
@@ -989,6 +1030,265 @@ function hiveMenu(e) {
 }
 
 /* ============================================================
+   主页模式：好友 + 私信
+   ============================================================ */
+
+function setComposerVisible(visible) {
+    document.querySelector(".composer").classList.toggle("hidden", !visible);
+}
+
+async function refreshDms() {
+    try {
+        state.dms = await api.get("/dms");
+    } catch {
+        return;
+    }
+    if (state.mode === "home") renderDmList();
+    updateHomeDot();
+}
+
+async function refreshFriendsData() {
+    try {
+        const [friends, requests] = await Promise.all([
+            api.get("/friends"), api.get("/friends/requests"),
+        ]);
+        state.friends = friends;
+        state.requests = requests;
+    } catch {
+        return;
+    }
+    updateHomeDot();
+}
+
+async function refreshAllHome() {
+    await Promise.all([refreshFriendsData(), refreshDms()]);
+    if (state.mode === "home") {
+        renderDmList();
+        renderFriendsView();
+        renderHomeMembers();
+    }
+}
+
+/** 主页红点：未读私信总数 + 待处理申请数 */
+function updateHomeDot() {
+    const unread = state.dms.reduce(
+        (sum, d) => sum + (d.channelId === state.currentChannelId ? 0 : (d.unread ?? 0)), 0);
+    const n = unread + state.requests.length;
+    $("home-dot").classList.toggle("hidden", n === 0);
+}
+
+async function enterHome() {
+    state.mode = "home";
+    state.currentChannelId = null;
+    state.replyTo = null;
+    hideReplyBar();
+    state.typing.clear();
+    renderTyping();
+    $("btn-home").classList.add("active");
+    $("btn-hive-menu").style.visibility = "hidden";
+    $("hive-name").textContent = "好友与私信";
+    $("channel-name").textContent = "好友";
+    $("channel-topic").textContent = "";
+    $("members-title").textContent = "好友";
+    setComposerVisible(false);
+    renderRail();
+    await refreshAllHome();
+    renderDmList();
+    renderFriendsView();
+    renderHomeMembers();
+}
+
+/** 侧栏：好友入口 + 私信会话列表 */
+function renderDmList() {
+    if (state.mode !== "home") return;
+    const tree = $("channel-tree");
+    tree.innerHTML = "";
+
+    const friendsRow = el("div", "dm-row" + (!state.currentChannelId ? " active" : ""));
+    friendsRow.appendChild(el("span", "ch-hex", "🐝"));
+    friendsRow.appendChild(el("span", "ch-name", "好友"));
+    if (state.requests.length) {
+        friendsRow.appendChild(el("span", "unread-badge", String(state.requests.length)));
+    }
+    friendsRow.onclick = () => {
+        state.currentChannelId = null;
+        $("channel-name").textContent = "好友";
+        $("channel-topic").textContent = "";
+        setComposerVisible(false);
+        renderDmList();
+        renderFriendsView();
+    };
+    tree.appendChild(friendsRow);
+
+    tree.appendChild(el("div", "section-label", `私信 — ${state.dms.length}`));
+    for (const d of state.dms) {
+        const row = el("div", "dm-row" + (d.channelId === state.currentChannelId ? " active" : ""));
+        row.appendChild(hexAvatar(d, "small"));
+        const main = el("div", "dm-main");
+        const name = el("div", "dm-name");
+        name.appendChild(el("span", "", d.nickname));
+        if (d.lastAt) name.appendChild(el("span", "dm-time", fmtTime(d.lastAt)));
+        main.appendChild(name);
+        const preview = !d.lastContent ? "开始聊天吧"
+            : d.lastContent.startsWith("/uploads/") ? "[图片]" : d.lastContent;
+        main.appendChild(el("div", "dm-preview", preview));
+        row.appendChild(main);
+        const unread = d.channelId === state.currentChannelId ? 0 : (d.unread ?? 0);
+        if (unread > 0) row.appendChild(el("span", "unread-badge", unread > 99 ? "99+" : String(unread)));
+        row.onclick = () => selectDm(d);
+        tree.appendChild(row);
+    }
+    if (!state.dms.length) {
+        tree.appendChild(el("div", "friends-empty", "还没有私信会话"));
+    }
+}
+
+/** 打开一个私信会话 */
+async function selectDm(conv) {
+    state.currentChannelId = conv.channelId;
+    state.replyTo = null;
+    hideReplyBar();
+    state.messages = [];
+    state.oldestId = null;
+    state.hasMore = true;
+    state.typing.clear();
+    renderTyping();
+    $("channel-name").textContent = conv.nickname;
+    $("channel-topic").textContent = `与 @${conv.username} 的私聊`;
+    $("composer-input").placeholder = `给 ${conv.nickname} 发消息…`;
+    setComposerVisible(true);
+    renderDmList();
+    await loadHistory(true);
+    markRead();
+    conv.unread = 0;
+    renderDmList();
+    updateHomeDot();
+}
+
+/** 与某人开启私聊（好友列表/成员菜单入口） */
+async function openDmWith(userId) {
+    try {
+        const { channelId } = await api.post(`/dms/${userId}`);
+        if (state.mode !== "home") await enterHome();
+        else await refreshDms();
+        const conv = state.dms.find((d) => d.channelId === channelId);
+        if (conv) await selectDm(conv);
+    } catch (err) {
+        toast(err.message, "err");
+    }
+}
+
+/** 主区域：好友管理视图（添加/申请处理/好友列表） */
+function renderFriendsView() {
+    if (state.mode !== "home" || state.currentChannelId) return;
+    const listEl = $("msg-list");
+    listEl.innerHTML = "";
+    const v = el("div", "friends-view");
+
+    v.appendChild(el("h3", "", "添加好友"));
+    const addRow = el("div", "add-friend-row");
+    const input = el("input");
+    input.placeholder = "输入对方用户名，例如 xiaomi";
+    input.maxLength = 20;
+    const btn = el("button", "mini-btn gold", "发送申请");
+    const doAdd = async () => {
+        const name = input.value.trim();
+        if (!name) return;
+        try {
+            await api.post("/friends/requests", { username: name });
+            toast("好友申请已发送 🐝", "ok");
+            input.value = "";
+            refreshAllHome();
+        } catch (err) {
+            toast(err.message, "err");
+        }
+    };
+    btn.onclick = doAdd;
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") doAdd(); });
+    addRow.append(input, btn);
+    v.appendChild(addRow);
+
+    if (state.requests.length) {
+        v.appendChild(el("h3", "", `待处理申请 — ${state.requests.length}`));
+        for (const r of state.requests) {
+            const row = el("div", "friend-row");
+            row.appendChild(hexAvatar(r, "small"));
+            const main = el("div", "friend-main");
+            main.appendChild(el("div", "friend-name", r.nickname));
+            main.appendChild(el("div", "friend-sub", `@${r.username}`));
+            row.appendChild(main);
+            const acts = el("div", "friend-actions");
+            const yes = el("button", "mini-btn gold", "接受");
+            yes.onclick = async () => {
+                try { await api.post(`/friends/requests/${r.id}/accept`); refreshAllHome(); }
+                catch (err) { toast(err.message, "err"); }
+            };
+            const no = el("button", "mini-btn red", "拒绝");
+            no.onclick = async () => {
+                try { await api.del(`/friends/requests/${r.id}`); refreshAllHome(); }
+                catch (err) { toast(err.message, "err"); }
+            };
+            acts.append(yes, no);
+            row.appendChild(acts);
+            v.appendChild(row);
+        }
+    }
+
+    v.appendChild(el("h3", "", `我的好友 — ${state.friends.length}`));
+    if (!state.friends.length) {
+        v.appendChild(el("div", "friends-empty", "还没有好友。输入用户名发送申请试试（演示账号互加：afeng / xiaomi / wengweng）"));
+    }
+    for (const f of state.friends) {
+        const row = el("div", "friend-row");
+        row.appendChild(hexAvatar(f, "small"));
+        const main = el("div", "friend-main");
+        main.appendChild(el("div", "friend-name", f.nickname));
+        main.appendChild(el("div", "friend-sub",
+            `@${f.username}${state.online.has(f.userId) ? " · 🟢 在线" : ""}`));
+        row.appendChild(main);
+        const acts = el("div", "friend-actions");
+        const chat = el("button", "mini-btn gold", "发消息");
+        chat.onclick = () => openDmWith(f.userId);
+        const rm = el("button", "mini-btn red", "删除");
+        rm.onclick = () => confirmModal("删除好友", `确定删除好友 ${f.nickname} 吗？`, async () => {
+            try { await api.del(`/friends/${f.userId}`); refreshAllHome(); }
+            catch (err) { toast(err.message, "err"); }
+        });
+        acts.append(chat, rm);
+        row.appendChild(acts);
+        v.appendChild(row);
+    }
+    listEl.appendChild(v);
+}
+
+/** 主页右栏：好友在线状态 */
+function renderHomeMembers() {
+    if (state.mode !== "home") return;
+    const listEl = $("member-list");
+    listEl.innerHTML = "";
+    $("member-count").textContent = ` · ${state.friends.length}`;
+    const online = state.friends.filter((f) => state.online.has(f.userId));
+    const offline = state.friends.filter((f) => !state.online.has(f.userId));
+    const section = (label, arr, off) => {
+        if (!arr.length) return;
+        listEl.appendChild(el("div", "section-label", `${label} — ${arr.length}`));
+        for (const f of arr) {
+            const row = el("div", "member-row" + (off ? " offline" : ""));
+            row.appendChild(hexAvatar(f, "small"));
+            row.appendChild(el("span", "presence-dot"));
+            const main = el("div", "member-main");
+            main.appendChild(el("div", "member-name", f.nickname));
+            main.appendChild(el("div", "member-sub", `@${f.username}`));
+            row.appendChild(main);
+            row.onclick = () => openDmWith(f.userId);
+            listEl.appendChild(row);
+        }
+    };
+    section("在线", online, false);
+    section("离线", offline, true);
+}
+
+/* ============================================================
    静态控件绑定
    ============================================================ */
 
@@ -999,6 +1299,7 @@ function autoSize(ta) {
 
 function bindStatic() {
     bindLightbox();
+    $("btn-home").onclick = enterHome;
     $("btn-create-hive").onclick = openCreateHiveModal;
     $("btn-join-hive").onclick = openJoinHiveModal;
     $("btn-hive-menu").onclick = hiveMenu;
