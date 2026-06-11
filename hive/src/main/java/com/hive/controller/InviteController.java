@@ -1,0 +1,27 @@
+package com.hive.controller;
+
+import com.hive.common.ApiResponse;
+import com.hive.config.CurrentUid;
+import com.hive.model.dto.HiveVO;
+import com.hive.service.HiveService;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/invites")
+public class InviteController {
+
+    private final HiveService hiveService;
+
+    public InviteController(HiveService hiveService) {
+        this.hiveService = hiveService;
+    }
+
+    /** 凭邀请码加入蜂巢 */
+    @PostMapping("/{code}/join")
+    public ApiResponse<HiveVO> join(@CurrentUid long uid, @PathVariable String code) {
+        return ApiResponse.ok(hiveService.join(uid, code));
+    }
+}
