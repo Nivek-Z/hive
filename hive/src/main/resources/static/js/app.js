@@ -6,6 +6,7 @@ import {
     showModal, closeModal, confirmModal, showCtx, closeCtx, toast,
     showEmojiPop, hideEmojiPop, openLightbox, bindLightbox, colorRow,
 } from "./ui.js";
+import { confetti, beeRain, achievementToast, bindKonami } from "./effects.js";
 
 // 权限位（与后端 Permissions.java 一致）
 const P = {
@@ -532,7 +533,14 @@ function sendMessage() {
     const input = $("composer-input");
     const text = input.value.trim();
     if (!text || !state.currentChannelId) return;
-    if (!can(P.SEND)) { toast("你没有发言权限", "err"); return; }
+    if (state.mode === "hive" && !can(P.SEND)) { toast("你没有发言权限", "err"); return; }
+    // 斜杠命令：结果以系统消息广播回来，跳过乐观渲染
+    if (text.startsWith("/")) {
+        state.socket.send("MSG_SEND", { channelId: state.currentChannelId, content: text });
+        input.value = "";
+        autoSize(input);
+        return;
+    }
     const nonce = `n${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
     const temp = {
         id: null, nonce,
@@ -669,6 +677,14 @@ function handleWsEvent(type, d) {
             if (d.kind === "REQUEST_NEW") toast(`🐝 ${d.from.nickname} 请求加你为好友`, "ok");
             if (d.kind === "ACCEPTED") toast(`🎉 你和 ${d.friend.nickname} 已成为好友`, "ok");
             refreshAllHome();
+            break;
+
+        case "ACHIEVEMENT_UNLOCKED":
+            achievementToast(d);
+            break;
+
+        case "EGG":
+            d.effect === "bees" ? beeRain() : confetti();
             break;
 
         case "HIVE_EVENT":
@@ -1125,6 +1141,132 @@ function openAssignRolesModal(m) {
     });
 }
 
+/* ---------- 成就墙 / 搜索 / 统计 ---------- */
+
+async function openAchievementsModal() {
+    let list;
+    try {
+        list = await api.get("/users/me/achievements");
+    } catch (err) {
+        toast(err.message, "err");
+        return;
+    }
+    const unlocked = list.filter((a) => a.unlockedAt);
+    const points = unlocked.reduce((s, a) => s + (a.points ?? 0), 0);
+    const body = el("div");
+    const summary = el("div", "ach-summary");
+    summary.innerHTML = `已解锁 <b>${unlocked.length}</b> / ${list.length} 个成就 · 成就点数 <b>${points}</b>`;
+    body.appendChild(summary);
+    const grid = el("div", "ach-grid");
+    for (const a of list) {
+        const card = el("div", "ach-card " + (a.unlockedAt ? "unlocked" : "locked"));
+        card.appendChild(el("span", "big", a.emoji));
+        const txt = el("div");
+        const title = el("b", "", a.name);
+        txt.appendChild(title);
+        const desc = el("i", "", a.unlockedAt
+            ? `${a.description} · ${fmtTime(a.unlockedAt)}`
+            : a.description);
+        txt.appendChild(desc);
+        card.appendChild(txt);
+        grid.appendChild(card);
+    }
+    body.appendChild(grid);
+    showModal({ title: "🏆 我的成就", sub: "有些成就藏得很深，多探索蜂巢吧", body,
+        actions: [{ label: "关闭", kind: "ghost" }] });
+}
+
+function openSearchModal() {
+    if (state.mode !== "hive" || !state.currentHiveId) {
+        toast("请先进入一个蜂巢再搜索");
+        return;
+    }
+    const body = el("div");
+    const input = el("input");
+    input.placeholder = "输入关键词，回车搜索（支持中文分词）";
+    input.style.cssText = "width:100%;background:var(--bg-deepest);border:1px solid var(--line);" +
+        "border-radius:10px;padding:11px 13px;outline:none;color:var(--text-hi);";
+    body.appendChild(input);
+    const results = el("div");
+    results.style.cssText = "margin-top:12px;max-height:46vh;overflow-y:auto;";
+    body.appendChild(results);
+
+    const doSearch = async () => {
+        const q = input.value.trim();
+        if (!q) return;
+        results.innerHTML = "";
+        try {
+            const hits = await api.get(`/search/messages?hiveId=${state.currentHiveId}&q=${encodeURIComponent(q)}`);
+            if (!hits.length) {
+                results.appendChild(el("div", "friends-empty", "没有找到相关消息"));
+                return;
+            }
+            for (const h of hits) {
+                const row = el("div", "search-hit");
+                const meta = el("div", "sh-meta");
+                meta.innerHTML = `<b>⬡ ${esc(h.channelName)}</b><span>${esc(h.senderNickname ?? "系统")}</span><span>${fmtTime(h.createdAt)}</span>`;
+                row.appendChild(meta);
+                const content = el("div", "sh-content");
+                content.innerHTML = renderContent(h.content);
+                row.appendChild(content);
+                results.appendChild(row);
+            }
+        } catch (err) {
+            toast(err.message, "err");
+        }
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+    showModal({ title: "🔍 搜索消息", sub: "基于 MySQL ngram 中文全文索引", body,
+        actions: [{ label: "关闭", kind: "ghost" }] });
+}
+
+async function openStatsModal() {
+    let stats;
+    try {
+        stats = await api.get(`/hives/${state.currentHiveId}/stats`);
+    } catch (err) {
+        toast(err.message, "err");
+        return;
+    }
+    const byDate = new Map((stats.daily ?? []).map((r) => [r.date, r.count]));
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        days.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, count: byDate.get(key) ?? 0 });
+    }
+    const max = Math.max(1, ...days.map((d) => d.count));
+    const body = el("div");
+    body.appendChild(el("div", "modal-sub", "近 7 日消息量"));
+    const chart = el("div", "bar-chart");
+    for (const d of days) {
+        const col = el("div", "bar-col");
+        col.appendChild(el("span", "bar-val", String(d.count)));
+        const fill = el("div", "bar-fill");
+        fill.style.height = `${Math.round((d.count / max) * 100)}%`;
+        col.appendChild(fill);
+        col.appendChild(el("span", "bar-day", d.label));
+        chart.appendChild(col);
+    }
+    body.appendChild(chart);
+    const medals = ["🥇", "🥈", "🥉", "4.", "5."];
+    if (stats.topSpeakers?.length) {
+        const h = el("div", "modal-sub", "发言排行榜");
+        h.style.marginTop = "16px";
+        body.appendChild(h);
+        stats.topSpeakers.forEach((s, i) => {
+            const row = el("div", "rank-row");
+            row.appendChild(el("span", "", medals[i] ?? `${i + 1}.`));
+            row.appendChild(el("b", "", s.name));
+            const cnt = el("span", "cnt", `${s.count} 条`);
+            row.appendChild(cnt);
+            body.appendChild(row);
+        });
+    }
+    showModal({ title: `📊 ${state.detail?.name ?? ""} · 活跃统计`, body,
+        actions: [{ label: "关闭", kind: "ghost" }] });
+}
+
 function openProfileModal() {
     const body = el("div");
     body.innerHTML = `
@@ -1133,6 +1275,29 @@ function openProfileModal() {
         <label class="field"><span>头像颜色</span></label>`;
     const colors = colorRow(state.me.avatarColor);
     body.appendChild(colors.node);
+
+    // 聊天热力图（近半年，GitHub 风格）
+    const heatLabel = el("label", "field");
+    heatLabel.style.marginTop = "16px";
+    heatLabel.innerHTML = "<span>聊天热力图（近 26 周）</span>";
+    body.appendChild(heatLabel);
+    const heatGrid = el("div", "heat-grid");
+    body.appendChild(heatGrid);
+    body.appendChild(el("div", "heat-cap", "颜色越深越话痨 🍯"));
+    api.get("/users/me/heatmap").then((rows) => {
+        const byDate = new Map(rows.map((r) => [r.date, r.count]));
+        const days = 26 * 7;
+        for (let i = days - 1; i >= 0; i--) {
+            const d = new Date(Date.now() - i * 86400000);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            const c = byDate.get(key) ?? 0;
+            const level = c === 0 ? 0 : c <= 2 ? 1 : c <= 5 ? 2 : c <= 9 ? 3 : 4;
+            const cell = el("i", `heat-cell l${level}`);
+            cell.title = `${key}：${c} 条消息`;
+            heatGrid.appendChild(cell);
+        }
+    }).catch(() => {});
+
     showModal({
         title: "个人资料", sub: `@${state.me.username}`, body,
         actions: [
@@ -1169,6 +1334,7 @@ function hiveMenu(e) {
     if (can(P.MANAGE_CHANNELS)) items.push({ icon: "⬡", label: "新建频道 / 分区", onClick: () => openCreateChannelModal(null, null) });
     if (can(P.MANAGE_ROLES)) items.push({ icon: "🎖️", label: "角色管理", onClick: openRolesModal });
     if (can(P.MANAGE_HIVE)) items.push({ icon: "⚙️", label: "蜂巢设置", onClick: openHiveSettingsModal });
+    items.push({ icon: "📊", label: "活跃统计", onClick: openStatsModal });
     if (items.length) items.push("-");
     if (isOwner()) {
         items.push({
@@ -1470,6 +1636,13 @@ function autoSize(ta) {
 function bindStatic() {
     bindLightbox();
     $("btn-home").onclick = enterHome;
+    $("btn-achievements").onclick = openAchievementsModal;
+    $("btn-search").onclick = openSearchModal;
+    // Konami 秘技：↑↑↓↓←→←→BA → 蜜蜂雨 + 隐藏成就
+    bindKonami(() => {
+        beeRain();
+        api.post("/eggs/konami").catch(() => {});
+    });
     $("btn-create-hive").onclick = openCreateHiveModal;
     $("btn-join-hive").onclick = openJoinHiveModal;
     $("btn-hive-menu").onclick = hiveMenu;
