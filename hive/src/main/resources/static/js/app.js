@@ -14,6 +14,36 @@ const P = {
     MENTION_ALL: 256, SEND: 512, ATTACH: 1024, REACT: 2048,
 };
 
+/** 权限位的中文说明（角色编辑界面用） */
+const PERM_DEFS = [
+    { bit: P.ADMIN, label: "管理员（全部权限）" },
+    { bit: P.MANAGE_HIVE, label: "管理蜂巢资料" },
+    { bit: P.MANAGE_CHANNELS, label: "管理频道" },
+    { bit: P.MANAGE_ROLES, label: "管理角色" },
+    { bit: P.KICK, label: "踢出成员" },
+    { bit: P.MUTE, label: "禁言成员" },
+    { bit: P.DEL_MSG, label: "删除他人消息" },
+    { bit: P.INVITE, label: "创建邀请" },
+    { bit: P.MENTION_ALL, label: "@全体成员" },
+    { bit: P.SEND, label: "发送消息" },
+    { bit: P.ATTACH, label: "发送图片" },
+    { bit: P.REACT, label: "添加表情回应" },
+];
+
+/** 成员名字颜色 = 其最高 position 的非默认角色颜色 */
+function memberRoleColor(m) {
+    const mine = (state.detail?.roles ?? [])
+        .filter((r) => !r.isDefault && m.roleIds?.includes(r.id))
+        .sort((a, b) => b.position - a.position);
+    return mine[0]?.color ?? null;
+}
+
+function memberRoleNames(m) {
+    return (state.detail?.roles ?? [])
+        .filter((r) => m.roleIds?.includes(r.id))
+        .map((r) => r.name);
+}
+
 const state = {
     me: null,
     mode: "hive",          // hive=蜂巢模式 / home=好友私信模式
@@ -720,7 +750,12 @@ function buildMemberRow(m, offline) {
 
     const main = el("div", "member-main");
     const nameEl = el("div", "member-name");
-    nameEl.appendChild(el("span", "", m.hiveNickname || m.nickname));
+    const nameSpan = el("span", "", m.hiveNickname || m.nickname);
+    const roleColor = memberRoleColor(m);
+    if (roleColor) nameSpan.style.color = roleColor;
+    nameEl.appendChild(nameSpan);
+    const roleNames = memberRoleNames(m);
+    if (roleNames.length) row.title = "角色：" + roleNames.join("、");
     if (m.owner) nameEl.appendChild(el("span", "crown", "👑"));
     if (m.mutedUntil && new Date(m.mutedUntil) > new Date()) nameEl.appendChild(el("span", "muted-mark", "🔇"));
     main.appendChild(nameEl);
@@ -749,6 +784,10 @@ function memberCtxMenu(e, m) {
                 },
             });
         }
+    }
+    if (can(P.MANAGE_ROLES)) {
+        items.push("-");
+        items.push({ icon: "🎖️", label: "分配角色", onClick: () => openAssignRolesModal(m) });
     }
     if (m.userId !== state.me.id && !m.owner) {
         if (can(P.MUTE)) {
@@ -956,6 +995,136 @@ function openHiveSettingsModal() {
     });
 }
 
+/* ---------- 角色管理 ---------- */
+
+function openRolesModal() {
+    const body = el("div");
+    for (const r of state.detail?.roles ?? []) {
+        const row = el("div", "role-row");
+        const dot = el("span", "role-dot");
+        dot.style.background = r.color;
+        row.appendChild(dot);
+        row.appendChild(el("span", "role-name", r.name));
+        if (r.isDefault) row.appendChild(el("span", "role-tag", "默认·所有成员"));
+        const edit = el("button", "mini-btn", "编辑");
+        edit.onclick = () => openRoleEditModal(r);
+        row.appendChild(edit);
+        if (!r.isDefault) {
+            const del = el("button", "mini-btn red", "删除");
+            del.onclick = () => confirmModal("删除角色",
+                `确定删除角色「${r.name}」吗？拥有该角色的成员将失去对应权限。`,
+                async () => {
+                    try { await api.del(`/roles/${r.id}`); toast("已删除", "ok"); }
+                    catch (err) { toast(err.message, "err"); }
+                });
+            row.appendChild(del);
+        }
+        body.appendChild(row);
+    }
+    showModal({
+        title: "角色管理",
+        sub: "成员的生效权限 = 其所有角色权限的并集（位运算 OR），巢主天然拥有全部权限",
+        body,
+        actions: [
+            { label: "关闭", kind: "ghost" },
+            { label: "＋ 新建角色", onClick: (close) => { close(); openRoleEditModal(null); } },
+        ],
+    });
+}
+
+function openRoleEditModal(role) {
+    const body = el("div");
+    body.innerHTML = `
+        <label class="field"><span>角色名称</span>
+            <input id="m-role-name" maxlength="20" value="${esc(role?.name ?? "")}" placeholder="例如：元老 / 巡逻蜂"></label>
+        <label class="field"><span>名字颜色</span></label>`;
+    const colors = colorRow(role?.color ?? "#5C6BC0");
+    body.appendChild(colors.node);
+    const permLabel = el("label", "field");
+    permLabel.style.marginTop = "14px";
+    permLabel.innerHTML = "<span>权限（勾选授予）</span>";
+    body.appendChild(permLabel);
+    const grid = el("div", "perm-grid");
+    const checks = new Map();
+    for (const p of PERM_DEFS) {
+        const item = el("label", "perm-item");
+        const cb = el("input");
+        cb.type = "checkbox";
+        cb.checked = role
+            ? (role.permissions & p.bit) === p.bit
+            : [P.SEND, P.ATTACH, P.REACT].includes(p.bit);
+        checks.set(p.bit, cb);
+        item.appendChild(cb);
+        item.appendChild(el("span", "", p.label));
+        grid.appendChild(item);
+    }
+    body.appendChild(grid);
+    showModal({
+        title: role ? `编辑角色「${role.name}」` : "新建角色",
+        body,
+        actions: [
+            { label: "取消", kind: "ghost" },
+            {
+                label: "保存", onClick: async (close) => {
+                    const name = $("m-role-name").value.trim();
+                    if (!name) { toast("名称不能为空", "err"); return; }
+                    let permissions = 0;
+                    checks.forEach((cb, bit) => { if (cb.checked) permissions |= bit; });
+                    try {
+                        if (role) {
+                            await api.put(`/roles/${role.id}`, { name, color: colors.value, permissions });
+                        } else {
+                            await api.post(`/hives/${state.currentHiveId}/roles`, { name, color: colors.value, permissions });
+                        }
+                        close();
+                        toast("角色已保存 ✓", "ok");
+                    } catch (err) { toast(err.message, "err"); }
+                },
+            },
+        ],
+    });
+}
+
+function openAssignRolesModal(m) {
+    const assignable = (state.detail?.roles ?? []).filter((r) => !r.isDefault);
+    const body = el("div", "assign-list");
+    if (!assignable.length) {
+        body.appendChild(el("div", "friends-empty", "还没有可分配的角色，先去「角色管理」创建一个"));
+    }
+    const checks = new Map();
+    for (const r of assignable) {
+        const item = el("label", "perm-item");
+        const cb = el("input");
+        cb.type = "checkbox";
+        cb.checked = m.roleIds?.includes(r.id) ?? false;
+        checks.set(r.id, cb);
+        const dot = el("span", "role-dot");
+        dot.style.background = r.color;
+        item.append(cb, dot, el("span", "", r.name));
+        body.appendChild(item);
+    }
+    showModal({
+        title: `分配角色 · ${m.hiveNickname || m.nickname}`,
+        sub: "默认角色「工蜂」所有成员自动拥有，无需分配",
+        body,
+        actions: [
+            { label: "取消", kind: "ghost" },
+            {
+                label: "保存", onClick: async (close) => {
+                    const roleIds = [...checks.entries()]
+                        .filter(([, cb]) => cb.checked)
+                        .map(([id]) => id);
+                    try {
+                        await api.put(`/hives/${state.currentHiveId}/members/${m.userId}/roles`, { roleIds });
+                        close();
+                        toast("已保存 ✓", "ok");
+                    } catch (err) { toast(err.message, "err"); }
+                },
+            },
+        ],
+    });
+}
+
 function openProfileModal() {
     const body = el("div");
     body.innerHTML = `
@@ -998,6 +1167,7 @@ function hiveMenu(e) {
     const items = [];
     if (can(P.INVITE)) items.push({ icon: "✉️", label: "邀请成员", onClick: openInviteModal });
     if (can(P.MANAGE_CHANNELS)) items.push({ icon: "⬡", label: "新建频道 / 分区", onClick: () => openCreateChannelModal(null, null) });
+    if (can(P.MANAGE_ROLES)) items.push({ icon: "🎖️", label: "角色管理", onClick: openRolesModal });
     if (can(P.MANAGE_HIVE)) items.push({ icon: "⚙️", label: "蜂巢设置", onClick: openHiveSettingsModal });
     if (items.length) items.push("-");
     if (isOwner()) {

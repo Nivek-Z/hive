@@ -22,6 +22,7 @@ import com.hive.model.dto.HiveReq;
 import com.hive.model.dto.HiveVO;
 import com.hive.model.dto.InviteVO;
 import com.hive.model.dto.MemberVO;
+import com.hive.model.dto.RoleVO;
 import com.hive.model.dto.UnreadRow;
 import com.hive.util.Ids;
 import com.hive.ws.WsPush;
@@ -106,9 +107,10 @@ public class HiveService {
         List<ChannelVO> channels = channelMapper.listByHive(hiveId).stream()
                 .map(ChannelVO::from).toList();
         List<UnreadRow> unreads = messageMapper.unreadCounts(hiveId, uid);
+        List<RoleVO> roles = roleMapper.listByHive(hiveId).stream().map(RoleVO::from).toList();
         return new HiveDetailVO(hive.getId(), hive.getName(), hive.getDescription(),
                 hive.getIconColor(), hive.getOwnerId(),
-                memberMapper.countByHive(hiveId), perms, channels, unreads);
+                memberMapper.countByHive(hiveId), perms, channels, unreads, roles);
     }
 
     @Transactional
