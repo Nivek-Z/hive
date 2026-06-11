@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢 Hive · 嗡嗡作响的地方</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50 3,93 26,93 74,50 97,7 74,7 26' fill='%23ffb300'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%90%9D%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<!-- ===================== 登录 / 注册 ===================== -->
+<div id="auth-view" class="auth-view hidden">
+  <div class="auth-brand">
+    <div class="hex-field" aria-hidden="true">
+      <span class="hex-float h1"></span><span class="hex-float h2"></span>
+      <span class="hex-float h3"></span><span class="hex-float h4"></span>
+      <span class="hex-float h5"></span><span class="hex-float h6"></span>
+    </div>
+    <div class="brand-center">
+      <div class="brand-logo">
+        <div class="brand-hex"><span>🐝</span></div>
+      </div>
+      <h1 class="brand-name">蜂巢<span class="brand-en">HIVE</span></h1>
+      <p class="brand-slogan">嗡嗡作响的地方 · 你的实时聊天社区</p>
+      <ul class="brand-points">
+        <li><span class="pt">⬡</span> 群中群 · 无限嵌套的频道分区</li>
+        <li><span class="pt">⬡</span> 实时消息 · 回应 · 引用 · 撤回</li>
+        <li><span class="pt">⬡</span> 角色权限 · 成就 · 隐藏彩蛋</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="auth-panel">
+    <form id="auth-form" class="auth-card" autocomplete="off">
+      <h2 id="auth-title">欢迎回巢</h2>
+      <p class="auth-sub" id="auth-sub">登录你的蜂巢账号</p>
+
+      <label class="field">
+        <span>用户名</span>
+        <input id="auth-username" type="text" maxlength="20" placeholder="字母 / 数字 / 下划线" required>
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input id="auth-password" type="password" maxlength="32" placeholder="至少 6 位" required>
+      </label>
+      <label class="field hidden" id="auth-nickname-field">
+        <span>昵称</span>
+        <input id="auth-nickname" type="text" maxlength="16" placeholder="大家怎么称呼你？">
+      </label>
+
+      <p id="auth-error" class="auth-error" role="alert"></p>
+      <button id="auth-submit" class="btn-honey" type="submit">登 录</button>
+      <p class="auth-switch">
+        <span id="auth-switch-text">还没有账号？</span>
+        <a href="javascript:void(0)" id="auth-switch-link">立即注册</a>
+      </p>
+      <p class="auth-demo">演示账号：afeng / xiaomi / wengweng（密码 123456）</p>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== 主应用 ===================== -->
+<div id="app-view" class="app-view hidden">
+
+  <!-- 第一栏：蜂巢条 -->
+  <nav class="rail" id="rail">
+    <div class="rail-list" id="rail-list"></div>
+    <div class="rail-bottom">
+      <button class="rail-hex rail-action" id="btn-create-hive" title="创建蜂巢"><span>＋</span></button>
+      <button class="rail-hex rail-action" id="btn-join-hive" title="凭邀请码加入"><span>⌁</span></button>
+    </div>
+  </nav>
+
+  <!-- 第二栏：频道树 -->
+  <aside class="sidebar">
+    <header class="hive-head" id="hive-head">
+      <div class="hive-head-name" id="hive-name">—</div>
+      <button class="hive-head-btn" id="btn-hive-menu" title="蜂巢操作">▾</button>
+    </header>
+    <div class="channel-tree" id="channel-tree"></div>
+    <footer class="me-bar">
+      <div class="hexavatar small" id="me-avatar"></div>
+      <div class="me-info">
+        <div class="me-name" id="me-name">—</div>
+        <div class="me-sub" id="me-username">@—</div>
+      </div>
+      <button class="icon-btn" id="btn-profile" title="个人资料">⚙</button>
+      <button class="icon-btn" id="btn-logout" title="退出登录">⏻</button>
+    </footer>
+  </aside>
+
+  <!-- 第三栏：聊天区 -->
+  <main class="chat">
+    <header class="chat-head">
+      <span class="chat-hex">⬡</span>
+      <span class="chat-name" id="channel-name">选择一个频道</span>
+      <span class="chat-topic" id="channel-topic"></span>
+    </header>
+    <div class="msg-scroll" id="msg-scroll">
+      <div id="msg-list" class="msg-list"></div>
+    </div>
+    <div class="typing-bar" id="typing-bar"></div>
+    <footer class="composer">
+      <div class="reply-bar hidden" id="reply-bar">
+        <span class="reply-info">回复 <b id="reply-name"></b>：<span id="reply-snippet"></span></span>
+        <button class="icon-btn" id="btn-cancel-reply">✕</button>
+      </div>
+      <div class="composer-row">
+        <button class="icon-btn big" id="btn-attach" title="发送图片">🖼</button>
+        <textarea id="composer-input" rows="1" maxlength="2000" placeholder="给频道发消息…"></textarea>
+        <button class="icon-btn big" id="btn-emoji" title="表情">😀</button>
+        <button class="btn-honey send" id="btn-send">发送</button>
+      </div>
+      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+    </footer>
+  </main>
+
+  <!-- 第四栏：成员列表 -->
+  <aside class="members" id="members-pane">
+    <header class="members-head">成员 <span id="member-count"></span></header>
+    <div class="member-list" id="member-list"></div>
+  </aside>
+</div>
+
+<!-- 通用挂载点 -->
+<div id="modal-root"></div>
+<div id="ctx-root"></div>
+<div id="toast-root"></div>
+<div id="lightbox" class="lightbox hidden"><img id="lightbox-img" alt=""></div>
+<div id="emoji-pop" class="emoji-pop hidden"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
