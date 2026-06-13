@@ -10,22 +10,22 @@ const HONEY = 0xffb300;
 /** 双主题色表：暖灰米现代白 / 墨岩黑夜（月光 + 琥珀灯火） */
 const THEMES = {
     light: {
-        bg: 0xe9eae5, ground: 0xe2e3dd, tile: 0xf5f5ef, decor: 0xdcddd6,
-        line: 0xc2c2b6, runway: 0xc6c6bb, motes: 0xb9b9ae,
-        hemiSky: 0xf6f7f4, hemiGround: 0xd8d8d0, hemiI: 1.05,
-        sun: 0xfff3df, sunI: 1.3, exposure: 0.98,
+        bg: 0xe7e8e2, ground: 0xd6d7cc, tile: 0xf7f7f2, decor: 0xcfd0c6,
+        line: 0xbcbcae, runway: 0xc6c6bb, motes: 0xb4b4a8,
+        hemiSky: 0xeef0ec, hemiGround: 0xcccdc2, hemiI: 0.72,
+        sun: 0xfff2da, sunI: 2.05, exposure: 0.98,
         fogNear: 70, fogFar: 250, tileGlow: 0x000000,
-        skyTop: 0xdcdfdc, rim: 0xd5dfeb, rimI: 0.45,
-        envI: 0.5, ao: 0.2, star: 0,
+        skyTop: 0xd6d9d4, rim: 0xd5dfeb, rimI: 0.4,
+        envI: 0.5, ao: 0.3, star: 0, reliefTone: 0xcccdc0,
     },
     dark: {
-        bg: 0x161614, ground: 0x232320, tile: 0x787567, decor: 0x45443c,
+        bg: 0x141412, ground: 0x2a2925, tile: 0x8d8a7a, decor: 0x3a392f,
         line: 0x6a675a, runway: 0x706d5f, motes: 0x6d6a5c,
-        hemiSky: 0x707694, hemiGround: 0x282832, hemiI: 1.1,
-        sun: 0xd2daff, sunI: 1.4, exposure: 1.08,
+        hemiSky: 0x60657e, hemiGround: 0x22222a, hemiI: 0.7,
+        sun: 0xd2daff, sunI: 1.95, exposure: 1.08,
         fogNear: 90, fogFar: 330, tileGlow: 0x0d0d12,
         skyTop: 0x090a10, rim: 0x8a7244, rimI: 0.7,
-        envI: 0.28, ao: 0.34, star: 0.85,
+        envI: 0.28, ao: 0.42, star: 0.85, reliefTone: 0x322f29,
     },
 };
 
@@ -123,7 +123,7 @@ export class World {
         this.channelTiles = new Map();
         this.dmTiles = new Map();
         this.tweens = [];
-        this.streams = [];
+        this.floorWaves = [];   // 地板波动（切换群落时一道实体波横扫过地坪）
         this.currentHiveId = null;
         this.activeTileId = null;
         this.activeRing = null;
@@ -149,9 +149,78 @@ export class World {
         this._buildAOTex();
         this._buildSky();
         this._buildEnv();
+        this._buildReliefGround();
         this._buildStars();
         this._buildMotes();
         this.resize();
+    }
+
+    /**
+     * 网格凹凸地面：大格地砖梯田（平面网格挤进 3D）。
+     * 高度由平滑场量化成几级台阶；沿林荫道主轴自动压平成山谷，柱体立在平地上，
+     * 两侧梯田抬升没入雾里。砖间细缝 + 台阶软影 = 不画线的「网格」。
+     */
+    _buildReliefGround() {
+        const t = THEMES[this.themeName];
+        this.matRelief = new THREE.MeshStandardMaterial({ color: new THREE.Color(t.reliefTone), roughness: 0.7 });
+        this.matRelief.envMapIntensity = t.envI;
+        this._envMats.push(this.matRelief);
+
+        const CELL = 10, GAP = 0.85, THICK = 2.2, EXT = 215, LIFT = 0.04;
+        const CX = 40, CZ = -30;                 // 林荫道大致中心
+        const STEP = 0.36, MAXH = 1.9;           // 台阶高 / 最高梯田
+        const PLATEAU = 0.55;                    // 主轴台地高度（柱群坐其上）
+        const perp = new THREE.Vector2(0.555, 0.832);  // 林荫道法向
+        const shades = [0.96, 1.0, 1.04];
+        this._reliefThick = THICK;
+        this._reliefLift = LIFT;
+        // 任意点的地面高度（不含波动）：主轴是平整台地，向两侧过渡到梯田
+        this._floorH = (px, pz) => {
+            const f = 0.6 * Math.sin(0.045 * px + 0.5) + 0.5 * Math.cos(0.038 * pz - 1.0) + 0.35 * Math.sin(0.06 * (px + pz));
+            const raw = Math.min(Math.max((f + 1.45) / 2.9, 0), 1);
+            const relief = Math.round((raw * MAXH) / STEP) * STEP;
+            const pd = Math.abs(px * perp.x + pz * perp.y);
+            const damp = smoothstep(Math.min(Math.max((pd - 6) / 18, 0), 1));
+            let h = PLATEAU * (1 - damp) + relief * damp;
+            const er = Math.hypot(px - CX, pz - CZ);
+            h *= 1 - smoothstep(Math.min(Math.max((er - (EXT - 36)) / 36, 0), 1));
+            return h;
+        };
+        const geo = new THREE.BoxGeometry(CELL - GAP, THICK, CELL - GAP);
+        const n = Math.floor((EXT * 2) / CELL);
+        const count = n * n;
+        const mesh = new THREE.InstancedMesh(geo, this.matRelief, count);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        const dummy = new THREE.Object3D();
+        const col = new THREE.Color();
+        const rnd = mulberry32(7);
+        // 存下每块砖基准（供地板波动实时改写 Y）
+        this._reliefX = new Float32Array(count);
+        this._reliefZ = new Float32Array(count);
+        this._reliefBaseY = new Float32Array(count);
+        this._reliefMesh = mesh;
+        this._reliefDummy = dummy;
+        let idx = 0;
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+                const x = CX - EXT + i * CELL + CELL / 2;
+                const z = CZ - EXT + j * CELL + CELL / 2;
+                const by = this._floorH(x, z) + LIFT - THICK / 2;
+                this._reliefX[idx] = x; this._reliefZ[idx] = z; this._reliefBaseY[idx] = by;
+                dummy.position.set(x, by, z);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(idx, dummy.matrix);
+                const s = shades[Math.floor(rnd() * 3)];
+                col.setRGB(s, s, s);
+                mesh.setColorAt(idx, col);
+                idx++;
+            }
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        this.reliefGround = mesh;
+        this.scene.add(mesh);
     }
 
     /* ============ 几何 ============ */
@@ -275,7 +344,7 @@ export class World {
         this._aoGeo.rotateX(-Math.PI / 2);
     }
 
-    _addAO(parent, x, z, size, y = 0.015) {
+    _addAO(parent, x, z, size, y = 0.06) {
         const m = new THREE.Mesh(this._aoGeo, this.matAO);
         m.scale.set(size, 1, size);
         m.position.set(x, y, z);
@@ -340,15 +409,17 @@ export class World {
         hives.forEach((h, i) => {
             if (this.hiveGroups.has(h.id)) return;
             const center = World.hivePos(i);
+            const groundY = this._floorH(center.x, center.z) + this._reliefLift;  // 柱群坐在地面高度上
             const group = new THREE.Group();
             group.position.copy(center);
+            group.position.y = groundY;
             this.scene.add(group);
 
             const T = THEMES[this.themeName];
             const icon = new THREE.Color(h.iconColor || "#9a9a90");
 
             // 中央纪念碑：干净六棱柱
-            const monument = this._tile(this._hexGeo(2.6, 3.0), this.matTiles[0]);
+            const monument = this._tile(this._hexGeo(2.6, 3.9), this.matTiles[0]);
             monument.userData.kind = "hive";
             monument.userData.hiveId = h.id;
             monument.userData.riseK = 1;
@@ -380,7 +451,7 @@ export class World {
             group.add(proxy);
 
             this.hiveGroups.set(h.id, {
-                group, center, monument, pool, proxy, icon, ringMat,
+                group, center, groundY, monument, pool, proxy, icon, ringMat,
                 anchor: center.clone().setY(5.6),
                 energy: 0, ambient: 0, channelsBuilt: false, index: i,
                 towerScale: 1, towerTarget: 1,
@@ -396,7 +467,7 @@ export class World {
         if (!hg || hg.channelsBuilt) return;
         hg.channelsBuilt = true;
         const slots = hexSpiralSlots(channels.length, 3.2);
-        const heights = [0.7, 0.88, 1.06, 1.24, 1.42];
+        const heights = [1.1, 1.45, 1.8, 2.15, 2.5];
         channels.forEach((c, i) => {
             const h = heights[Number(c.id) % heights.length];
             const tile = this._tile(this._hexGeo(2.0, h));
@@ -431,8 +502,11 @@ export class World {
 
     buildHome() {
         if (this.homeGroup) return;
+        const c = this.homeCenter();
+        this.homeGroundY = this._floorH(c.x, c.z) + this._reliefLift;
         const g = new THREE.Group();
-        g.position.copy(this.homeCenter());
+        g.position.copy(c);
+        g.position.y = this.homeGroundY;
         this.scene.add(g);
 
         const plinth = this._tile(this._roundGeo(3.0, 1.5), this.matTiles[0]);
@@ -473,7 +547,7 @@ export class World {
             const dm = dms[i];
             if (this.dmTiles.has(dm.channelId)) continue;
             const a = (Math.PI * 2 * i) / Math.max(ring, 5) - Math.PI / 3;
-            const hh = 0.8 + (i % 3) * 0.25;
+            const hh = 1.2 + (i % 3) * 0.35;
             const tile = this._tile(this._roundGeo(1.6, hh));
             tile.position.set(Math.cos(a) * 7.8, 0, Math.sin(a) * 7.8);
             tile.userData.kind = "dm";
@@ -528,18 +602,28 @@ export class World {
         u.bobUntil = now + 2.8;
     }
 
-    /** 跨巢光流：从 A 流向 B 的琥珀彗尾 */
-    streamTo(from, to, dur = 2.0) {
-        const N = 64;
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(N * 3), 3));
-        const pts = new THREE.Points(geo, new THREE.PointsMaterial({
-            color: HONEY, size: 0.5, transparent: true, opacity: 0.9,
-            depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
-        }));
-        pts.frustumCulled = false;
-        this.scene.add(pts);
-        this.streams.push({ pts, from: from.clone(), to: to.clone(), t: 0, dur, N });
+    /** 地板涟漪：从源头向外扩散的同心水波，瓦片随波起伏 + 自身发淡蓝光 */
+    streamTo(from, to, dur = 2.4) {
+        this.floorWaves.push({
+            cx: from.x, cz: from.z, t: 0, dur,
+            amp: 1.6, speed: 44, width: 14, range: 130,
+        });
+    }
+
+    /** 某点处所有活动涟漪的叠加位移（柱群落座 + 瓦片随波用） */
+    _waveDispAt(x, z) {
+        let disp = 0;
+        for (let w = 0; w < this.floorWaves.length; w++) {
+            const wv = this.floorWaves[w];
+            const r = Math.hypot(x - wv.cx, z - wv.cz);
+            const ring = wv.speed * wv.t;                 // 扩散半径
+            const d = (r - ring) / wv.width;
+            if (d < -3.2 || d > 3.2) continue;
+            const radial = Math.exp(-r / wv.range);        // 远处渐弱
+            const tFade = 1 - smoothstep(Math.min(wv.t / wv.dur, 1));  // 整体渐隐
+            disp += wv.amp * Math.cos(d * 1.5) * Math.exp(-d * d) * radial * tFade;  // 涟漪起伏
+        }
+        return disp;
     }
 
     bumpChannelActivity(channelId, amt = 1) {
@@ -614,6 +698,7 @@ export class World {
             pairs.push([m.color, new THREE.Color(t.tile).multiplyScalar(this.tileMults[i])]);
             pairs.push([m.emissive, t.tileGlow]);
         });
+        if (this.matRelief) pairs.push([this.matRelief.color, t.reliefTone]);
         if (this.runway) pairs.push([this.runway.material.color, t.runway]);
         if (this.motes) pairs.push([this.motes.material.color, t.motes]);
         for (const hg of this.hiveGroups.values()) {
@@ -705,7 +790,8 @@ export class World {
         tile.scale.y = Math.max(u.riseK * (1 + u.actVis * 0.6), 0.001);
         if (u.geoH) {
             u.height = u.geoH * tile.scale.y;
-            if (u.anchor) u.anchor.y = u.baseY + u.height + 2.0;
+            // 锚点叠加所在群组的落座高度（随地面/波动起伏）
+            if (u.anchor) u.anchor.y = (tile.parent?.position.y ?? 0) + u.baseY + u.height + 2.0;
         }
         let bobbing = 0;
         if (u.bobUntil > now) {
@@ -742,8 +828,9 @@ export class World {
         if (this.activeRing?.visible) {
             const tile = this._tileOf(this.activeTileId);
             if (tile) {
+                // 世界坐标（含群组落座抬升）+ 柱高 → 光环正落在柱顶
                 tile.getWorldPosition(this.activeRing.position);
-                this.activeRing.position.y = tile.position.y + (tile.userData.height ?? 0.9) + 0.22;
+                this.activeRing.position.y += (tile.userData.height ?? 0.9) + 0.22;
                 const fadeIn = Math.min((now - (this.ringT0 ?? 0)) / 0.6, 1);
                 this.activeRing.material.opacity = (0.45 + Math.sin(now * 2.4) * 0.18) * fadeIn;
                 const s = 1 + Math.sin(now * 2.4) * 0.03;
@@ -754,13 +841,21 @@ export class World {
         // 蜂巢主塔随成员数生长 + 脉冲/常驻微光
         const decay = Math.exp(-dt * 1.4);
         const grow = 1 - Math.exp(-dt * 2);
+        const waving = this.floorWaves.length > 0;
         for (const hg of this.hiveGroups.values()) {
             hg.towerScale += (hg.towerTarget - hg.towerScale) * grow;
             const tu = hg.monument.userData;
             hg.monument.scale.y = Math.max(tu.riseK * hg.towerScale, 0.001);
-            hg.anchor.y = 3.0 * hg.monument.scale.y + 2.6;
+            // 柱群坐在地面高度上，随波一起起伏（不被抬起的地砖穿模）
+            if (waving) hg.group.position.y = hg.groundY + this._waveDispAt(hg.center.x, hg.center.z);
+            else if (hg.group.position.y !== hg.groundY) hg.group.position.y = hg.groundY;
+            hg.anchor.y = hg.group.position.y + 3.9 * hg.monument.scale.y + 2.0;
             hg.energy *= decay;
             hg.pool.material.opacity = Math.min(hg.energy + hg.ambient, 0.85);
+        }
+        if (this.homeGroup) {
+            this.homeGroup.position.y = waving
+                ? this.homeGroundY + this._waveDispAt(-58, 44) : this.homeGroundY;
         }
         if (this.homePool) {
             this.homeEnergy *= decay;
@@ -771,23 +866,32 @@ export class World {
             this.homeHalo.rotation.z = Math.sin(now * 0.3) * 0.06;
         }
 
-        // 跨巢光流推进
-        for (let i = this.streams.length - 1; i >= 0; i--) {
-            const s = this.streams[i];
-            s.t += dt;
-            const head = s.t / s.dur;
-            const pos = s.pts.geometry.attributes.position;
-            for (let k = 0; k < s.N; k++) {
-                const p = head - k * 0.012;
-                if (p < 0 || p > 1) { pos.setXYZ(k, 0, -50, 0); continue; }
-                const e = smoothstep(p);
-                pos.setXYZ(k, s.from.x + (s.to.x - s.from.x) * e,
-                    0.5 + Math.sin(Math.PI * e) * 2.6 + Math.sin(k * 1.7) * 0.12,
-                    s.from.z + (s.to.z - s.from.z) * e);
+        // 地板涟漪推进：从源头向外扩散的同心水波，瓦片随波起伏
+        if (this.floorWaves.length) {
+            for (let w = this.floorWaves.length - 1; w >= 0; w--) {
+                const wv = this.floorWaves[w];
+                wv.t += dt;
+                if (wv.t > wv.dur + 0.4) this.floorWaves.splice(w, 1);
             }
-            pos.needsUpdate = true;
-            s.pts.material.opacity = head < 0.85 ? 0.9 : Math.max(0, 0.9 * (1 - (head - 0.85) / 0.35));
-            if (head > 1.2) { this.scene.remove(s.pts); s.pts.geometry.dispose(); s.pts.material.dispose(); this.streams.splice(i, 1); }
+            const mesh = this._reliefMesh, dummy = this._reliefDummy, N = this._reliefX.length;
+            for (let i = 0; i < N; i++) {
+                const x = this._reliefX[i], z = this._reliefZ[i];
+                dummy.position.set(x, this._reliefBaseY[i] + this._waveDispAt(x, z), z);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(i, dummy.matrix);
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            this._reliefWaving = true;
+        } else if (this._reliefWaving) {
+            // 波结束：位置复位一次
+            const mesh = this._reliefMesh, dummy = this._reliefDummy;
+            for (let i = 0; i < this._reliefX.length; i++) {
+                dummy.position.set(this._reliefX[i], this._reliefBaseY[i], this._reliefZ[i]);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(i, dummy.matrix);
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            this._reliefWaving = false;
         }
 
         // 浮尘缓慢游移

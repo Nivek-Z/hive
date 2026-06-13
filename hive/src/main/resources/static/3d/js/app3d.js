@@ -125,7 +125,7 @@ const state = {
 
 /* ============ 世界与运镜 ============ */
 let world, cinema;
-const SHOT = { az: 0.42, elHive: 0.58, distHive: 47, elCh: 0.5, distCh: 31 };
+const SHOT = { az: 0.42, elHive: 0.34, distHive: 44, elCh: 0.3, distCh: 27 };
 
 try {
     world = new World($("gl"));
@@ -157,11 +157,11 @@ function setThemeSetting(s) {
 }
 
 const shotHive = (center, extra = {}) =>
-    ({ center, dist: SHOT.distHive, az: SHOT.az, el: SHOT.elHive, dur: 2.1, lift: 14, targetLift: 1.5, ...extra });
+    ({ center, dist: SHOT.distHive, az: SHOT.az, el: SHOT.elHive, dur: 2.1, lift: 14, targetLift: 2.8, ...extra });
 const shotChannel = (tilePos, center) => ({
     center: center.clone().lerp(tilePos, 0.6),
     dist: SHOT.distCh, az: SHOT.az, el: SHOT.elCh,
-    dur: 1.6, lift: 6, targetLift: 1.2, shift: 5,
+    dur: 1.6, lift: 6, targetLift: 2.0, shift: 5,
 });
 
 /* ============ 3D 锚定标签层 ============ */
