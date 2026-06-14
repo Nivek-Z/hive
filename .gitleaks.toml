@@ -1,0 +1,11 @@
+title = "Hive gitleaks 配置"
+
+[extend]
+useDefault = true   # 保留 gitleaks 内置全部规则（AWS / GitHub token / 私钥 / 高熵串 等）
+
+[allowlist]
+description = "课程演示用占位密钥与弱口令，非真实凭据"
+regexes = [
+  '''hive-2026-course-project-secret-key-[0-9a-f]+''',  # 演示 JWT 默认密钥
+  '''123456''',                                          # 演示数据库 / 账号弱口令
+]
