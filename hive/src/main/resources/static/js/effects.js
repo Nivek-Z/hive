@@ -34,9 +34,11 @@ export function beeRain() {
     }
 }
 
-/** 成就解锁金色横幅 */
+/** 成就解锁金色横幅（多个同时弹出时向下堆叠） */
 export function achievementToast(a) {
     const t = el("div", "ach-toast");
+    const stacked = document.querySelectorAll(".ach-toast").length;
+    if (stacked > 0) t.style.top = `${24 + stacked * 78}px`;
     t.innerHTML = `<span class="ach-emoji">${esc(a.emoji)}</span>`
         + `<span class="ach-text"><b>成就解锁 · ${esc(a.name)}</b><i>${esc(a.description)}</i></span>`
         + `<span class="ach-points">+${a.points ?? 0}</span>`;

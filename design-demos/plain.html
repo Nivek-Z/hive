@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢 Hive · 素简版</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   蜂巢 Hive · 素简版（纯静态 DEMO）
+   微暖纸白 · 墨黑 · 黛蓝单点缀 · 宋体标题 · 发丝细线 · 直角面板
+   设计原则：克制、信息优先、像正经办公软件，杜绝 AI 通用感
+   ============================================================ */
+:root{
+  --paper:#F4F2EC;       /* 微暖纸白底 */
+  --panel:#FBFAF6;       /* 面板更亮一点 */
+  --white:#FFFFFF;
+  --ink:#23272D;         /* 墨黑（略偏冷） */
+  --ink-2:#6A6F77;       /* 次级文字 */
+  --ink-3:#9AA0A6;       /* 弱化文字 */
+  --line:#E0DDD3;        /* 发丝线（暖灰） */
+  --line-2:#EBE8DF;      /* 更浅的线 */
+  --accent:#2E4F6E;      /* 黛蓝 */
+  --accent-soft:#EAEFF4; /* 黛蓝浅底 */
+  --brick:#9A5B40;       /* 赭色，仅用于未读/提醒，极少量 */
+  --serif:"Noto Serif SC",Georgia,"Songti SC","SimSun",serif;
+  --sans:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Hiragino Sans GB","Source Han Sans SC",sans-serif;
+  --mono:Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--sans);font-size:14px;color:var(--ink);
+  background:var(--paper);overflow:hidden;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--accent-soft)}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:#CFCBBE;border:3px solid var(--paper);border-radius:0}
+::-webkit-scrollbar-thumb:hover{background:#B7B2A2}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;font-size:14px}
+input{font-family:inherit;color:var(--ink);font-size:14px}
+.serif{font-family:var(--serif)}
+.hidden{display:none!important}
+
+/* 演示切换条（克制） ----------------------------------------------------- */
+.demobar{
+  position:fixed;top:0;left:0;right:0;height:34px;z-index:99;
+  display:flex;align-items:center;gap:12px;padding:0 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);
+  font-size:12px;color:var(--ink-2);
+}
+.demobar .ttl{font-family:var(--serif);font-weight:600;color:var(--ink)}
+.demobar .sw{margin-left:auto;display:flex}
+.demobar .sw button{padding:4px 14px;color:var(--ink-2);border:1px solid var(--line);background:var(--white)}
+.demobar .sw button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.demobar .sw button:first-child{border-right:none}
+
+.stage{position:absolute;inset:34px 0 0 0;overflow:hidden}
+
+/* ============================ 登录页 ============================ */
+#view-login{position:absolute;inset:0;display:grid;place-items:center;padding:30px}
+.login-wrap{width:min(820px,96%);display:grid;grid-template-columns:1fr 1fr;
+  background:var(--white);border:1px solid var(--line);box-shadow:0 1px 0 rgba(0,0,0,.02)}
+/* 左：题署 */
+.login-brand{padding:48px 44px;border-right:1px solid var(--line);position:relative;background:var(--panel)}
+.login-brand .mark{
+  width:46px;height:52px;display:grid;place-items:center;margin-bottom:24px;
+  border:1.5px solid var(--accent);color:var(--accent);font-size:20px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+}
+.login-brand h1{font-family:var(--serif);font-weight:700;font-size:40px;letter-spacing:.06em;line-height:1.1}
+.login-brand .en{font-family:Georgia,serif;font-style:italic;color:var(--ink-3);font-size:15px;letter-spacing:.15em;margin-top:4px}
+.login-brand .rule{width:40px;height:2px;background:var(--accent);margin:22px 0}
+.login-brand p{color:var(--ink-2);font-size:13.5px;line-height:1.9;max-width:280px}
+.login-brand ul{margin-top:22px;list-style:none;display:flex;flex-direction:column;gap:9px}
+.login-brand li{font-size:13px;color:var(--ink-2);padding-left:16px;position:relative}
+.login-brand li::before{content:"";position:absolute;left:0;top:9px;width:5px;height:5px;background:var(--accent)}
+.login-brand .seal{position:absolute;right:34px;bottom:34px;width:48px;height:48px;border:1.5px solid var(--brick);
+  color:var(--brick);font-family:var(--serif);font-weight:700;display:grid;place-items:center;font-size:20px;
+  opacity:.85;transform:rotate(-4deg)}
+/* 右：表单 */
+.login-form{padding:48px 44px;display:flex;flex-direction:column;justify-content:center}
+.login-form .tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:26px}
+.login-form .tabs button{padding:8px 2px;margin-right:26px;color:var(--ink-3);font-size:15px;
+  border-bottom:2px solid transparent;margin-bottom:-1px}
+.login-form .tabs button.on{color:var(--ink);font-family:var(--serif);font-weight:600;border-bottom-color:var(--accent)}
+.field{margin-bottom:20px}
+.field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:7px;letter-spacing:.02em}
+.field input{width:100%;border:1px solid var(--line);background:var(--white);padding:10px 12px;
+  border-radius:0;outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--accent)}
+.btn{width:100%;background:var(--accent);color:#fff;padding:11px;font-size:15px;letter-spacing:.04em;
+  border:1px solid var(--accent);transition:background .15s}
+.btn:hover{background:#264259}
+.login-form .note{margin-top:16px;font-size:12.5px;color:var(--ink-3);text-align:center}
+.login-form .note b{color:var(--ink-2);font-weight:600}
+
+/* ============================ 聊天页 ============================ */
+#view-chat{position:absolute;inset:0;display:grid;grid-template-rows:50px 1fr;background:var(--white)}
+.topbar{display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.topbar .brand{font-family:var(--serif);font-weight:700;font-size:19px;letter-spacing:.08em}
+.topbar .brand .hx{color:var(--accent);font-weight:400;margin-right:5px}
+.topbar .crumb{color:var(--ink-3);font-size:13px}
+.topbar .crumb b{color:var(--ink-2);font-weight:600}
+.topbar .search{margin-left:auto;width:230px;border:1px solid var(--line);background:var(--white);
+  padding:6px 11px;color:var(--ink-3);font-size:13px}
+.topbar .me{padding-left:14px;border-left:1px solid var(--line);color:var(--ink);font-size:13px}
+.topbar .me b{font-weight:600}
+
+.cols{display:grid;grid-template-columns:208px 1fr 196px;overflow:hidden}
+.rail,.members{overflow-y:auto;background:var(--panel)}
+.rail{border-right:1px solid var(--line)}
+.members{border-left:1px solid var(--line)}
+.sec{font-size:11.5px;color:var(--ink-3);letter-spacing:.14em;padding:16px 16px 7px;text-transform:uppercase}
+
+/* 蜂巢列表 */
+.hive{display:flex;align-items:center;gap:9px;padding:8px 16px;color:var(--ink-2);cursor:pointer;
+  border-left:3px solid transparent}
+.hive:hover{background:var(--line-2)}
+.hive.on{background:var(--white);color:var(--ink);border-left-color:var(--accent);font-weight:600}
+.hive .dot{width:7px;height:7px;flex:none;background:var(--ink-3)}
+.hive.on .dot{background:var(--accent)}
+
+/* 频道树 */
+.chan{display:flex;align-items:center;gap:7px;padding:6px 16px 6px 20px;color:var(--ink-2);cursor:pointer;
+  border-left:3px solid transparent;font-size:13.5px}
+.chan:hover{background:var(--line-2)}
+.chan.on{background:var(--white);color:var(--ink);border-left-color:var(--accent);font-weight:600}
+.chan .h{color:var(--ink-3);font-family:var(--mono)}
+.chan.on .h{color:var(--accent)}
+.chan .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:#fff;background:var(--brick);
+  padding:0 6px;line-height:16px;min-width:16px;text-align:center}
+
+/* 主区 */
+.main{display:grid;grid-template-rows:48px 1fr auto;overflow:hidden;background:var(--white)}
+.chan-head{display:flex;align-items:baseline;gap:12px;padding:0 22px;border-bottom:1px solid var(--line)}
+.chan-head .nm{font-family:var(--serif);font-weight:600;font-size:17px}
+.chan-head .nm .h{color:var(--accent);font-weight:400}
+.chan-head .tp{color:var(--ink-3);font-size:12.5px}
+.chan-head .right{margin-left:auto;color:var(--ink-3);font-size:12.5px}
+
+.msgs{overflow-y:auto;padding:8px 0}
+.daydiv{display:flex;align-items:center;gap:14px;color:var(--ink-3);font-size:12px;padding:14px 24px}
+.daydiv::before,.daydiv::after{content:"";flex:1;height:1px;background:var(--line-2)}
+.msg{display:flex;gap:13px;padding:9px 24px;transition:background .12s}
+.msg:hover{background:#FAF9F4}
+.msg .av{width:36px;height:36px;flex:none;display:grid;place-items:center;border:1px solid var(--line);
+  background:var(--white);color:var(--ink-2);font-family:var(--serif);font-weight:600;font-size:15px}
+.msg .av.k-a{color:var(--accent);border-color:#C9D6E1}
+.msg .av.k-b{color:var(--brick);border-color:#DBC8BE}
+.msg .body{min-width:0}
+.msg .meta{display:flex;align-items:baseline;gap:9px;margin-bottom:2px}
+.msg .who{font-weight:600;color:var(--ink)}
+.role{font-size:11px;color:var(--ink-2);border:1px solid var(--line);padding:0 6px;line-height:16px}
+.role.adm{color:var(--brick);border-color:#DBC8BE}
+.role.mod{color:var(--accent);border-color:#C9D6E1}
+.role.bot{color:var(--ink-3)}
+.msg .tm{font-size:11.5px;color:var(--ink-3);font-family:var(--mono)}
+.msg .txt{color:#2C3137;line-height:1.65}
+.msg .txt.sys{color:var(--ink-2);font-style:normal}
+.reacts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.react{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--white);
+  padding:1px 8px;font-size:12px;color:var(--ink-2);cursor:pointer;user-select:none}
+.react:hover{border-color:var(--ink-3)}
+.react.on{background:var(--accent-soft);border-color:#C9D6E1;color:var(--accent)}
+.typing{padding:6px 24px 12px 73px;color:var(--ink-3);font-size:12.5px}
+.typing i{font-style:normal;letter-spacing:.1em}
+
+/* 输入区 */
+.composer{border-top:1px solid var(--line);padding:12px 22px;display:flex;gap:10px;align-items:center;background:var(--panel)}
+.composer .att{border:1px solid var(--line);background:var(--white);width:36px;height:36px;color:var(--ink-2);font-size:18px}
+.composer .att:hover{border-color:var(--ink-3)}
+.composer .box{flex:1;border:1px solid var(--line);background:var(--white);display:flex;align-items:center}
+.composer .box:focus-within{border-color:var(--accent)}
+.composer input{flex:1;border:none;outline:none;background:none;padding:10px 12px}
+.composer .send{padding:0 18px;align-self:stretch;color:var(--accent);border-left:1px solid var(--line);font-weight:600}
+.composer .send:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* 成员 */
+.mem{display:flex;align-items:center;gap:9px;padding:6px 16px;color:var(--ink-2)}
+.mem:hover{background:var(--line-2)}
+.mem .pip{width:7px;height:7px;flex:none;background:#5C9A6B}
+.mem.off .pip{background:#C8C3B6}
+.mem.off{color:var(--ink-3)}
+.mem .nm{font-size:13.5px}
+.mem .rl{margin-left:auto;font-size:11px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+
+<div class="demobar">
+  <span class="ttl">蜂巢 Hive · 素简版</span>
+  <span>朴素 / 克制 / 无 AI 味 — 纯静态预览</span>
+  <div class="sw">
+    <button id="sw-login" class="on" onclick="show('login')">登录页</button>
+    <button id="sw-chat" onclick="show('chat')">聊天页</button>
+  </div>
+</div>
+
+<div class="stage">
+
+<!-- ===================== 登录页 ===================== -->
+<section id="view-login">
+  <div class="login-wrap">
+    <div class="login-brand">
+      <div class="mark">⬡</div>
+      <h1>蜂巢</h1>
+      <div class="en">H I V E</div>
+      <div class="rule"></div>
+      <p>嗡嗡作响的地方。一个支持群组、频道、私聊与实时消息的轻量聊天社区。</p>
+      <ul>
+        <li>群组与频道 · 分区清晰</li>
+        <li>实时消息 · 回应 · 引用 · 撤回</li>
+        <li>角色权限 · 成员管理</li>
+      </ul>
+      <div class="seal">巢</div>
+    </div>
+    <form class="login-form" onsubmit="event.preventDefault();show('chat')">
+      <div class="tabs">
+        <button type="button" class="on" onclick="tab(this,'登 录')">登录</button>
+        <button type="button" onclick="tab(this,'注 册')">注册</button>
+      </div>
+      <div class="field">
+        <label>用户名</label>
+        <input value="afeng" placeholder="请输入用户名">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" value="123456" placeholder="请输入密码">
+      </div>
+      <button class="btn" id="enter-btn" type="submit">登 录</button>
+      <div class="note">演示账号 <b>afeng</b> / 密码 <b>123456</b></div>
+    </form>
+  </div>
+</section>
+
+<!-- ===================== 聊天页 ===================== -->
+<section id="view-chat" class="hidden">
+  <div class="topbar">
+    <span class="brand"><span class="hx">⬡</span>蜂巢</span>
+    <span class="crumb">代码蜂房 · <b id="crumb-ch">综合大厅</b></span>
+    <input class="search" placeholder="搜索消息 / 频道 / 成员">
+    <span class="me">你好，<b>阿风</b></span>
+  </div>
+
+  <div class="cols">
+    <!-- 左：蜂巢 + 频道 -->
+    <aside class="rail">
+      <div class="sec">蜂巢</div>
+      <div class="hive on" onclick="pickHive(this)"><span class="dot"></span> 代码蜂房</div>
+      <div class="hive" onclick="pickHive(this)"><span class="dot"></span> 深夜食堂</div>
+      <div class="hive" onclick="pickHive(this)"><span class="dot"></span> 考研搭子</div>
+      <div class="sec">频道</div>
+      <div class="chan on" onclick="pickChan(this,'综合大厅','大家随便聊')"><span class="h">#</span> 综合大厅</div>
+      <div class="chan" onclick="pickChan(this,'技术答疑','Java · 算法 · 报错求助')"><span class="h">#</span> 技术答疑 <span class="n">3</span></div>
+      <div class="chan" onclick="pickChan(this,'作业互助','大作业进度同步')"><span class="h">#</span> 作业互助</div>
+      <div class="chan" onclick="pickChan(this,'灌水区','闲聊灌水')"><span class="h">#</span> 灌水区 <span class="n">9</span></div>
+      <div class="chan" onclick="pickChan(this,'公告','只读 · 管理员发布')"><span class="h">#</span> 公告</div>
+    </aside>
+
+    <!-- 中：消息 -->
+    <main class="main">
+      <div class="chan-head">
+        <span class="nm"><span class="h">#</span> <span id="ch-name">综合大厅</span></span>
+        <span class="tp" id="ch-topic">大家随便聊</span>
+        <span class="right">成员 5 · 在线 3</span>
+      </div>
+
+      <div class="msgs" id="msgs">
+        <div class="daydiv">2026 年 6 月 13 日</div>
+
+        <div class="msg">
+          <div class="av k-b">翁</div>
+          <div class="body">
+            <div class="meta"><span class="who">翁翁</span><span class="role adm">巢主</span><span class="tm">09:12</span></div>
+            <div class="txt">这是新做的「素简版」界面，整体走朴素克制路线，你们觉得正式答辩用这个合适吗？</div>
+            <div class="reacts">
+              <div class="react on" onclick="rx(this)">👍 <span>3</span></div>
+              <div class="react" onclick="rx(this)">✅ <span>2</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="av k-a">米</div>
+          <div class="body">
+            <div class="meta"><span class="who">小米</span><span class="role mod">管理员</span><span class="tm">09:14</span></div>
+            <div class="txt">挺好，干净、不花哨，老师应该会喜欢这种稳重的。</div>
+            <div class="reacts"><div class="react" onclick="rx(this)">👌 <span>1</span></div></div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="av">助</div>
+          <div class="body">
+            <div class="meta"><span class="who">蜂巢助手</span><span class="role bot">系统</span><span class="tm">09:14</span></div>
+            <div class="txt sys">翁翁 解锁成就「界面设计师」。输入 /help 查看可用命令。</div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="av k-a">阿</div>
+          <div class="body">
+            <div class="meta"><span class="who">阿风</span><span class="tm">09:15</span></div>
+            <div class="txt">我也觉得，简洁耐看，重点是功能都在。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="typing"><i>小米 正在输入…</i></div>
+
+      <div class="composer">
+        <button class="att" title="附件 / 发图">＋</button>
+        <div class="box"><input id="inp" placeholder="输入消息，回车发送（试试 /help）" onkeydown="if(event.key==='Enter')sendMsg()"></div>
+        <button class="send" onclick="sendMsg()">发送</button>
+      </div>
+    </main>
+
+    <!-- 右：成员 -->
+    <aside class="members">
+      <div class="sec">在线 — 3</div>
+      <div class="mem"><span class="pip"></span><span class="nm">翁翁</span><span class="rl">巢主</span></div>
+      <div class="mem"><span class="pip"></span><span class="nm">小米</span><span class="rl">管理员</span></div>
+      <div class="mem"><span class="pip"></span><span class="nm">阿风</span><span class="rl">成员</span></div>
+      <div class="sec">离线 — 2</div>
+      <div class="mem off"><span class="pip"></span><span class="nm">栗子</span><span class="rl">成员</span></div>
+      <div class="mem off"><span class="pip"></span><span class="nm">阿康</span><span class="rl">成员</span></div>
+    </aside>
+  </div>
+</section>
+
+</div>
+
+<script>
+function show(v){
+  document.getElementById('view-login').classList.toggle('hidden',v!=='login');
+  document.getElementById('view-chat').classList.toggle('hidden',v!=='chat');
+  document.getElementById('sw-login').classList.toggle('on',v==='login');
+  document.getElementById('sw-chat').classList.toggle('on',v==='chat');
+}
+function tab(btn,label){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('enter-btn').textContent=label;
+}
+function pickHive(el){
+  el.parentElement.querySelectorAll('.hive').forEach(h=>h.classList.remove('on'));
+  el.classList.add('on');
+}
+function pickChan(el,name,topic){
+  document.querySelectorAll('.chan').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('ch-name').textContent=name;
+  document.getElementById('ch-topic').textContent=topic;
+  document.getElementById('crumb-ch').textContent=name;
+  document.getElementById('inp').placeholder='在 #'+name+' 输入消息，回车发送';
+}
+function rx(el){
+  el.classList.toggle('on');
+  const s=el.querySelector('span');
+  s.textContent=(+s.textContent)+(el.classList.contains('on')?1:-1);
+}
+function sendMsg(){
+  const inp=document.getElementById('inp');const t=inp.value.trim();if(!t)return;inp.value='';
+  const msgs=document.getElementById('msgs');
+  const m=document.createElement('div');m.className='msg';
+  m.innerHTML=`<div class="av k-a">阿</div><div class="body">
+    <div class="meta"><span class="who">阿风</span><span class="tm">现在</span></div>
+    <div class="txt">${t.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</div></div>`;
+  msgs.appendChild(m);msgs.scrollTop=msgs.scrollHeight;
+}
+</script>
+</body>
+</html>

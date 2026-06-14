@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢 HIVE · 新粗野主义皮肤 DEMO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   蜂巢 HIVE · 新粗野主义 NEO-BRUTALISM 皮肤（纯静态 DEMO）
+   粗黑描边 · 硬投影 · 高饱和撞色 · 超粗黑标题
+   ============================================================ */
+:root{
+  --paper:#F5EFDD;
+  --paper-2:#EFE7CF;
+  --ink:#141210;
+  --blue:#2D5BFF;
+  --yellow:#FFD400;
+  --red:#FF4D2E;
+  --green:#18A957;
+  --pink:#FF5DA2;
+  --bd:3px solid var(--ink);
+  --bd-fat:4px solid var(--ink);
+  --sh:6px 6px 0 var(--ink);
+  --sh-lg:10px 10px 0 var(--ink);
+  --sh-sm:4px 4px 0 var(--ink);
+  --disp:"Archivo Black","Noto Sans SC",sans-serif;
+  --cjk:"Noto Sans SC",sans-serif;
+  --mono:"Space Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--cjk);
+  color:var(--ink);
+  background:var(--paper);
+  /* 粗野主义底纹：细网格 + 几枚硬色块投影 */
+  background-image:
+    linear-gradient(var(--paper-2) 1px,transparent 1px),
+    linear-gradient(90deg,var(--paper-2) 1px,transparent 1px);
+  background-size:26px 26px;
+  overflow:hidden;
+}
+::selection{background:var(--yellow);color:var(--ink)}
+::-webkit-scrollbar{width:14px;height:14px}
+::-webkit-scrollbar-track{background:var(--paper-2);border-left:var(--bd)}
+::-webkit-scrollbar-thumb{background:var(--ink);border:3px solid var(--paper-2)}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea{font-family:inherit;color:var(--ink)}
+.mono{font-family:var(--mono)}
+.hidden{display:none!important}
+
+/* 顶部演示切换条 ---------------------------------------------------------- */
+.demobar{
+  position:fixed;top:0;left:0;right:0;height:38px;z-index:99;
+  display:flex;align-items:center;gap:10px;padding:0 14px;
+  background:var(--ink);color:var(--paper);
+  font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+}
+.demobar b{color:var(--yellow)}
+.demobar .sw{margin-left:auto;display:flex;gap:0}
+.demobar .sw button{
+  background:var(--paper);color:var(--ink);border:2px solid var(--paper);
+  padding:4px 12px;font-family:var(--mono);font-weight:700;font-size:11px;
+}
+.demobar .sw button.on{background:var(--yellow)}
+.demobar .sw button+button{border-left:2px solid var(--ink)}
+
+.stage{position:absolute;inset:38px 0 0 0;overflow:hidden}
+
+/* 通用色块/贴纸 ---------------------------------------------------------- */
+.tape{
+  position:absolute;font-family:var(--mono);font-weight:700;font-size:13px;
+  letter-spacing:.18em;background:var(--ink);color:var(--paper);
+  padding:6px 16px;white-space:nowrap;
+}
+.sticker{
+  display:inline-grid;place-items:center;border:var(--bd-fat);
+  box-shadow:var(--sh);background:var(--yellow);
+}
+
+/* ============================ 登录页 ============================ */
+#view-login{position:absolute;inset:0;display:grid;grid-template-columns:1.15fr .85fr}
+/* 左：品牌 */
+.brand{
+  position:relative;padding:60px 56px;overflow:hidden;
+  background:
+    repeating-linear-gradient(45deg,transparent 0 22px,rgba(20,18,16,.04) 22px 23px),
+    var(--blue);
+  border-right:var(--bd-fat);color:var(--paper);
+}
+.brand .corner-block{
+  position:absolute;width:120px;height:120px;border:var(--bd-fat);
+}
+.brand .cb1{top:-40px;right:60px;background:var(--yellow);transform:rotate(12deg)}
+.brand .cb2{bottom:40px;right:-30px;background:var(--red);transform:rotate(-8deg)}
+.brand .marquee{
+  position:absolute;top:24px;left:-10px;right:-10px;overflow:hidden;
+  border-top:var(--bd);border-bottom:var(--bd);background:var(--yellow);
+  transform:rotate(-2deg);
+}
+.brand .marquee .track{
+  display:inline-block;white-space:nowrap;color:var(--ink);
+  font-family:var(--mono);font-weight:700;letter-spacing:.2em;padding:6px 0;
+  animation:scroll 16s linear infinite;
+}
+@keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.brand-logo{margin-top:120px;animation:rise .6s both .1s}
+.brand-logo .bee{
+  position:absolute;font-size:64px;margin-top:-26px;margin-left:-8px;
+  transform:rotate(-14deg);filter:drop-shadow(4px 4px 0 var(--ink));
+}
+.brand h1{
+  font-family:var(--disp);font-size:120px;line-height:.86;color:var(--paper);
+  text-shadow:7px 7px 0 var(--ink);letter-spacing:-.02em;
+}
+.brand h1 .cn{display:block;font-size:88px}
+.brand .slogan{
+  margin-top:28px;display:inline-block;background:var(--ink);color:var(--paper);
+  padding:8px 16px;font-family:var(--mono);font-weight:700;font-size:15px;
+  box-shadow:var(--sh-sm);box-shadow:4px 4px 0 var(--yellow);
+  animation:rise .6s both .25s;
+}
+.brand .pts{margin-top:34px;display:flex;flex-direction:column;gap:14px;max-width:380px}
+.brand .pt{
+  display:flex;align-items:center;gap:12px;background:var(--paper);color:var(--ink);
+  border:var(--bd);box-shadow:var(--sh-sm);padding:12px 14px;font-weight:700;
+  animation:rise .5s both;
+}
+.brand .pt:nth-child(1){transform:rotate(-1.4deg);animation-delay:.34s}
+.brand .pt:nth-child(2){transform:rotate(.8deg);animation-delay:.42s}
+.brand .pt:nth-child(3){transform:rotate(-.6deg);animation-delay:.5s}
+.brand .pt .hex{
+  width:30px;height:30px;flex:none;display:grid;place-items:center;
+  background:var(--yellow);border:2px solid var(--ink);font-size:14px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1}}
+
+/* 右：登录卡 */
+.login-side{
+  position:relative;display:grid;place-items:center;padding:40px;
+}
+.login-side .blob{position:absolute;border:var(--bd-fat)}
+.login-side .lb1{top:70px;left:46px;width:90px;height:90px;background:var(--green);transform:rotate(-10deg)}
+.login-side .lb2{bottom:60px;right:50px;width:70px;height:70px;background:var(--pink);transform:rotate(14deg)}
+.card{
+  position:relative;width:min(420px,92%);background:var(--paper);
+  border:var(--bd-fat);box-shadow:var(--sh-lg);padding:30px 28px 28px;
+  animation:rise .55s both .2s;
+}
+.card .cap{
+  position:absolute;top:-18px;left:22px;background:var(--red);color:var(--paper);
+  font-family:var(--mono);font-weight:700;padding:5px 14px;border:var(--bd);
+  box-shadow:var(--sh-sm);transform:rotate(-2deg);font-size:13px;
+}
+.tabs{display:flex;margin:6px 0 22px;border:var(--bd)}
+.tabs button{
+  flex:1;padding:11px 0;font-weight:900;font-size:15px;background:var(--paper);
+}
+.tabs button.on{background:var(--ink);color:var(--paper)}
+.tabs button+button{border-left:var(--bd)}
+.field{display:block;margin-bottom:16px}
+.field span{
+  display:block;font-family:var(--mono);font-weight:700;font-size:12px;
+  letter-spacing:.06em;margin-bottom:6px;text-transform:uppercase;
+}
+.field input{
+  width:100%;border:var(--bd);background:#fff;padding:13px 14px;font-size:15px;
+  font-weight:700;outline:none;box-shadow:inset 0 0 0 0 var(--yellow);
+  transition:box-shadow .12s,transform .12s;
+}
+.field input:focus{box-shadow:var(--sh-sm);transform:translate(-2px,-2px)}
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  border:var(--bd-fat);background:var(--yellow);box-shadow:var(--sh);
+  padding:15px;font-weight:900;font-size:17px;
+  transition:transform .08s,box-shadow .08s;
+}
+.btn:hover{transform:translate(-2px,-2px);box-shadow:var(--sh-lg)}
+.btn:active{transform:translate(3px,3px);box-shadow:var(--sh-sm)}
+.btn.blue{background:var(--blue);color:var(--paper)}
+.foot{margin-top:16px;text-align:center;font-family:var(--mono);font-size:12px;color:#6b6457}
+.foot b{color:var(--ink)}
+
+/* ============================ 聊天页 ============================ */
+#view-chat{position:absolute;inset:0;display:grid;grid-template-rows:60px 1fr}
+.topbar{
+  display:flex;align-items:center;gap:16px;padding:0 18px;
+  background:var(--paper);border-bottom:var(--bd-fat);
+}
+.topbar .logo{font-family:var(--disp);font-size:26px;letter-spacing:-.02em}
+.topbar .logo .b{color:var(--blue)}
+.topbar .bee2{font-size:24px;transform:rotate(-12deg);display:inline-block}
+.search{
+  margin-left:8px;flex:none;width:260px;display:flex;align-items:center;gap:8px;
+  border:var(--bd);background:#fff;padding:8px 12px;box-shadow:var(--sh-sm);
+  font-family:var(--mono);font-size:13px;font-weight:700;color:#8a8270;
+}
+.top-spacer{flex:1}
+.me-chip{
+  display:flex;align-items:center;gap:10px;border:var(--bd);background:var(--yellow);
+  box-shadow:var(--sh-sm);padding:6px 12px 6px 6px;font-weight:900;
+}
+.me-chip .av{width:30px;height:30px;background:var(--ink);color:var(--yellow);
+  display:grid;place-items:center;font-family:var(--disp);font-size:14px}
+
+.cols{display:grid;grid-template-columns:240px 1fr 230px;overflow:hidden}
+.rail,.members{overflow-y:auto;background:var(--paper)}
+.rail{border-right:var(--bd-fat);padding:16px 14px}
+.members{border-left:var(--bd-fat);padding:16px 14px}
+.sec-t{font-family:var(--mono);font-weight:700;font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:#8a8270;margin:4px 2px 10px}
+
+/* 蜂巢卡片（撞色块） */
+.hives{display:flex;flex-direction:column;gap:10px;margin-bottom:22px}
+.hive{
+  display:flex;align-items:center;gap:11px;border:var(--bd);box-shadow:var(--sh-sm);
+  padding:10px 12px;font-weight:900;font-size:14px;background:#fff;
+  transition:transform .1s,box-shadow .1s;cursor:pointer;
+}
+.hive:hover{transform:translate(-2px,-2px);box-shadow:var(--sh)}
+.hive.on{background:var(--ink);color:var(--paper)}
+.hive .hx{
+  width:28px;height:28px;flex:none;display:grid;place-items:center;
+  border:2px solid var(--ink);font-size:13px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+}
+.hive.c-blue .hx{background:var(--blue);color:#fff}
+.hive.c-red .hx{background:var(--red);color:#fff}
+.hive.c-green .hx{background:var(--green);color:#fff}
+.hive.c-pink .hx{background:var(--pink);color:#fff}
+
+/* 频道列表 */
+.chans{display:flex;flex-direction:column;gap:7px}
+.chan{
+  display:flex;align-items:center;gap:8px;border:2px solid transparent;
+  padding:8px 10px;font-weight:700;cursor:pointer;
+  transition:transform .08s;
+}
+.chan:hover{border:var(--bd);background:#fff;transform:translateX(3px)}
+.chan.on{border:var(--bd);background:var(--yellow);box-shadow:var(--sh-sm)}
+.chan .h{font-family:var(--mono);font-weight:700;color:#8a8270}
+.chan.on .h{color:var(--ink)}
+.chan .badge{margin-left:auto;background:var(--red);color:#fff;font-family:var(--mono);
+  font-size:11px;font-weight:700;padding:1px 7px;border:2px solid var(--ink)}
+
+/* 聊天主区 */
+.main{display:grid;grid-template-rows:54px 1fr auto;overflow:hidden;background:var(--paper-2);
+  background-image:radial-gradient(rgba(20,18,16,.05) 2px,transparent 2px);background-size:22px 22px}
+.chan-head{
+  display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--paper);
+  border-bottom:var(--bd-fat);
+}
+.chan-head .name{font-family:var(--disp);font-size:20px}
+.chan-head .topic{font-family:var(--mono);font-size:12px;color:#8a8270;font-weight:700}
+.chan-head .pin{margin-left:auto;background:var(--green);color:#fff;border:var(--bd);
+  box-shadow:var(--sh-sm);padding:5px 12px;font-weight:900;font-size:12px;transform:rotate(2deg)}
+
+.msgs{overflow-y:auto;padding:22px 24px;display:flex;flex-direction:column;gap:18px}
+.daydiv{align-self:center;background:var(--ink);color:var(--paper);font-family:var(--mono);
+  font-weight:700;font-size:11px;letter-spacing:.1em;padding:4px 14px;transform:rotate(-1deg)}
+.msg{display:flex;gap:12px;animation:rise .35s both}
+.msg .av{
+  width:42px;height:42px;flex:none;display:grid;place-items:center;border:var(--bd);
+  box-shadow:var(--sh-sm);font-family:var(--disp);font-size:16px;color:#fff;
+}
+.av.a-blue{background:var(--blue)}.av.a-red{background:var(--red)}
+.av.a-green{background:var(--green)}.av.a-pink{background:var(--pink)}.av.a-ink{background:var(--ink);color:var(--yellow)}
+.msg .body{min-width:0}
+.msg .meta{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.msg .nm{font-weight:900;font-size:15px}
+.tag{font-family:var(--mono);font-weight:700;font-size:10px;letter-spacing:.05em;
+  padding:1px 7px;border:2px solid var(--ink);text-transform:uppercase}
+.tag.admin{background:var(--red);color:#fff}
+.tag.mod{background:var(--blue);color:#fff}
+.tag.bot{background:var(--green);color:#fff}
+.msg .tm{font-family:var(--mono);font-size:11px;color:#8a8270;font-weight:700}
+.bubble{
+  display:inline-block;background:#fff;border:var(--bd);box-shadow:var(--sh-sm);
+  padding:11px 14px;font-size:15px;font-weight:500;line-height:1.5;max-width:560px;
+}
+.bubble.mine{background:var(--yellow)}
+.reacts{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+.react{
+  display:flex;align-items:center;gap:5px;border:2px solid var(--ink);background:var(--paper);
+  padding:2px 9px;font-family:var(--mono);font-weight:700;font-size:12px;cursor:pointer;
+  transition:transform .08s;user-select:none;
+}
+.react:hover{transform:translateY(-2px)}
+.react.on{background:var(--blue);color:#fff}
+.typing{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;
+  font-weight:700;color:#8a8270}
+.typing .dots span{display:inline-block;width:7px;height:7px;background:var(--ink);margin-right:3px;
+  animation:bounce 1s infinite}
+.typing .dots span:nth-child(2){animation-delay:.15s}
+.typing .dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+
+/* 输入栏 */
+.composer{padding:14px 20px;background:var(--paper);border-top:var(--bd-fat);display:flex;gap:12px}
+.composer .plus{width:46px;flex:none;border:var(--bd);box-shadow:var(--sh-sm);background:var(--paper);
+  font-family:var(--disp);font-size:22px;transition:transform .08s,box-shadow .08s}
+.composer .plus:hover{transform:translate(-2px,-2px);box-shadow:var(--sh)}
+.composer .box{flex:1;display:flex;align-items:center;border:var(--bd);background:#fff;box-shadow:var(--sh-sm)}
+.composer input{flex:1;border:none;outline:none;background:none;padding:13px 14px;font-size:15px;font-weight:500}
+.composer .send{
+  border:none;background:var(--blue);color:#fff;align-self:stretch;padding:0 22px;
+  font-weight:900;font-size:15px;border-left:var(--bd);
+}
+.composer .send:active{background:var(--ink)}
+
+/* 成员栏 */
+.member{display:flex;align-items:center;gap:10px;padding:8px 8px;border:2px solid transparent;
+  font-weight:700;border-radius:0;transition:transform .08s}
+.member:hover{border:var(--bd);background:#fff;transform:translateX(-3px)}
+.member .av{width:34px;height:34px;flex:none;display:grid;place-items:center;border:2px solid var(--ink);
+  font-family:var(--disp);font-size:13px;color:#fff;position:relative}
+.member .dot{position:absolute;right:-4px;bottom:-4px;width:12px;height:12px;background:var(--green);
+  border:2px solid var(--ink);animation:pulse 1.8s infinite}
+.member.off .av{filter:grayscale(1) opacity(.5)}
+.member.off .dot{background:#9a917c;animation:none}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
+.member .nm{font-size:14px}
+.member .rl{font-family:var(--mono);font-size:10px;color:#8a8270;font-weight:700}
+
+/* 成就吐司 */
+.achv{
+  position:absolute;right:24px;bottom:90px;display:flex;align-items:center;gap:12px;
+  background:var(--ink);color:var(--paper);border:var(--bd-fat);box-shadow:var(--sh-lg);
+  padding:14px 18px;transform:rotate(-2deg);animation:pop .5s both;z-index:50;
+}
+.achv .ico{font-size:30px;background:var(--yellow);border:var(--bd);padding:6px;color:var(--ink)}
+.achv b{display:block;font-size:15px}
+.achv small{font-family:var(--mono);font-size:11px;color:var(--yellow)}
+@keyframes pop{from{opacity:0;transform:rotate(-2deg) scale(.7)}to{opacity:1}}
+</style>
+</head>
+<body>
+
+<div class="demobar">
+  <span>🐝 蜂巢 HIVE — <b>新粗野主义 NEO-BRUTALISM</b> 皮肤小样</span>
+  <span style="opacity:.6">纯静态 · 不接后端</span>
+  <div class="sw">
+    <button id="sw-login" class="on" onclick="show('login')">登录页</button>
+    <button id="sw-chat" onclick="show('chat')">聊天页</button>
+  </div>
+</div>
+
+<div class="stage">
+
+<!-- ===================== 登录页 ===================== -->
+<section id="view-login">
+  <div class="brand">
+    <div class="corner-block cb1"></div>
+    <div class="corner-block cb2"></div>
+    <div class="marquee"><span class="track">BUZZ BUZZ · 嗡嗡作响 · REALTIME CHAT · 实时社区 · BUZZ BUZZ · 嗡嗡作响 · REALTIME CHAT · 实时社区 · </span></div>
+    <div class="brand-logo">
+      <span class="bee">🐝</span>
+      <h1>HIVE<span class="cn">蜂巢</span></h1>
+    </div>
+    <div class="slogan">嗡嗡作响的地方 — 你的实时聊天社区</div>
+    <div class="pts">
+      <div class="pt"><span class="hex">⬡</span> 群中群 · 无限嵌套的频道分区</div>
+      <div class="pt"><span class="hex">⚡</span> 实时消息 · 回应 · 引用 · 撤回</div>
+      <div class="pt"><span class="hex">★</span> 角色权限 · 成就 · 隐藏彩蛋</div>
+    </div>
+  </div>
+
+  <div class="login-side">
+    <div class="blob lb1"></div>
+    <div class="blob lb2"></div>
+    <form class="card" onsubmit="event.preventDefault();show('chat')">
+      <div class="cap">/ 回巢 ↵</div>
+      <div class="tabs">
+        <button type="button" class="on" onclick="tab(this,'登录')">登录</button>
+        <button type="button" onclick="tab(this,'注册')">注册</button>
+      </div>
+      <label class="field"><span>用户名 / USERNAME</span><input value="afeng" placeholder="你的蜂巢账号"></label>
+      <label class="field"><span>密码 / PASSWORD</span><input type="password" value="123456" placeholder="••••••"></label>
+      <button class="btn" type="submit" id="enter-btn">进入蜂巢 →</button>
+      <div class="foot">还没有账号？点上面的 <b>注册</b> · 演示账号 <b>afeng / 123456</b></div>
+    </form>
+  </div>
+</section>
+
+<!-- ===================== 聊天页 ===================== -->
+<section id="view-chat" class="hidden">
+  <div class="topbar">
+    <span class="logo"><span class="b">H</span>IVE <span class="bee2">🐝</span></span>
+    <div class="search">🔍 搜索消息 / 频道 / 成员…</div>
+    <div class="top-spacer"></div>
+    <div class="me-chip"><span class="av">A</span> 阿风</div>
+  </div>
+
+  <div class="cols">
+    <!-- 左：蜂巢 + 频道 -->
+    <aside class="rail">
+      <div class="sec-t">我的蜂巢 / HIVES</div>
+      <div class="hives">
+        <div class="hive c-blue on" onclick="pickHive(this,'代码蜂房')"><span class="hx">⬡</span> 代码蜂房</div>
+        <div class="hive c-red" onclick="pickHive(this,'深夜食堂')"><span class="hx">⬡</span> 深夜食堂</div>
+        <div class="hive c-green" onclick="pickHive(this,'考研搭子')"><span class="hx">⬡</span> 考研搭子</div>
+        <div class="hive c-pink" onclick="pickHive(this,'摸鱼乐园')"><span class="hx">⬡</span> 摸鱼乐园</div>
+      </div>
+      <div class="sec-t">频道 / CHANNELS</div>
+      <div class="chans">
+        <div class="chan on" onclick="pickChan(this,'综合大厅','大家随便聊~')"><span class="h">#</span> 综合大厅</div>
+        <div class="chan" onclick="pickChan(this,'技术答疑','Java / 算法 / 报错求助')"><span class="h">#</span> 技术答疑 <span class="badge">3</span></div>
+        <div class="chan" onclick="pickChan(this,'作业互助','大作业进度同步')"><span class="h">#</span> 作业互助</div>
+        <div class="chan" onclick="pickChan(this,'灌水区','禁止严肃')"><span class="h">#</span> 灌水区 <span class="badge">9</span></div>
+        <div class="chan" onclick="pickChan(this,'公告','只读 · 管理员发布')"><span class="h">📣</span> 公告</div>
+      </div>
+    </aside>
+
+    <!-- 中：消息 -->
+    <main class="main">
+      <div class="chan-head">
+        <div><div class="name" id="ch-name"># 综合大厅</div></div>
+        <span class="topic" id="ch-topic">大家随便聊~</span>
+        <span class="pin">📌 置顶 2</span>
+      </div>
+
+      <div class="msgs" id="msgs">
+        <div class="daydiv">2026 年 6 月 13 日</div>
+
+        <div class="msg">
+          <div class="av a-red">W</div>
+          <div class="body">
+            <div class="meta"><span class="nm">翁翁</span><span class="tag admin">巢主</span><span class="tm">09:12</span></div>
+            <div class="bubble">新皮肤上线啦！这套叫「新粗野主义」，粗黑边 + 硬阴影 + 撞色，怎么样够不够野 😎</div>
+            <div class="reacts">
+              <div class="react on" onclick="rx(this)">🔥 <span>4</span></div>
+              <div class="react" onclick="rx(this)">👍 <span>2</span></div>
+              <div class="react" onclick="rx(this)">🐝 <span>1</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="av a-green">X</div>
+          <div class="body">
+            <div class="meta"><span class="nm">小米</span><span class="tag mod">管理员</span><span class="tm">09:14</span></div>
+            <div class="bubble">绝了，这个按下去会"啪"地陷下去的按钮我能玩一整天</div>
+            <div class="reacts">
+              <div class="react" onclick="rx(this)">😂 <span>3</span></div>
+              <div class="react" onclick="rx(this)">💯 <span>1</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="av a-ink">🤖</div>
+          <div class="body">
+            <div class="meta"><span class="nm">蜂巢小助手</span><span class="tag bot">BOT</span><span class="tm">09:14</span></div>
+            <div class="bubble">📢 <b>翁翁</b> 解锁成就「<b>潮流先锋</b>」— 体验全部三套皮肤。/help 查看更多命令</div>
+          </div>
+        </div>
+
+        <div class="msg" id="mine-anchor">
+          <div class="av a-blue">A</div>
+          <div class="body">
+            <div class="meta"><span class="nm">阿风</span><span class="tm">09:15</span></div>
+            <div class="bubble mine">我投这套一票，答辩肯定最跳的一个 🚀</div>
+            <div class="reacts"><div class="react on" onclick="rx(this)">❤️ <span>2</span></div></div>
+          </div>
+        </div>
+
+        <div class="typing" style="margin-left:54px">
+          <span class="dots"><span></span><span></span><span></span></span> 小米 正在输入…
+        </div>
+      </div>
+
+      <div class="composer">
+        <button class="plus" title="发图 / 附件">＋</button>
+        <div class="box">
+          <input id="inp" placeholder="在 # 综合大厅 说点什么…（/help 试试命令）" onkeydown="if(event.key==='Enter')sendMsg()">
+          <button class="send" onclick="sendMsg()">发送 ↵</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- 右：成员 -->
+    <aside class="members">
+      <div class="sec-t">在线 · 3</div>
+      <div class="member"><div class="av a-red">W<span class="dot"></span></div><div><div class="nm">翁翁</div><div class="rl">巢主</div></div></div>
+      <div class="member"><div class="av a-green">X<span class="dot"></span></div><div><div class="nm">小米</div><div class="rl">管理员</div></div></div>
+      <div class="member"><div class="av a-blue">A<span class="dot"></span></div><div><div class="nm">阿风（你）</div><div class="rl">成员</div></div></div>
+      <div class="sec-t" style="margin-top:18px">离线 · 2</div>
+      <div class="member off"><div class="av a-pink">L<span class="dot"></span></div><div><div class="nm">栗子</div><div class="rl">成员</div></div></div>
+      <div class="member off"><div class="av a-ink">K<span class="dot"></span></div><div><div class="nm">阿康</div><div class="rl">成员</div></div></div>
+    </aside>
+  </div>
+
+  <!-- 成就吐司 -->
+  <div class="achv" id="achv">
+    <div class="ico">🏆</div>
+    <div><b>成就解锁 · 破冰者</b><small>发出第一条消息</small></div>
+  </div>
+</section>
+
+</div>
+
+<script>
+function show(v){
+  document.getElementById('view-login').classList.toggle('hidden',v!=='login');
+  document.getElementById('view-chat').classList.toggle('hidden',v!=='chat');
+  document.getElementById('sw-login').classList.toggle('on',v==='login');
+  document.getElementById('sw-chat').classList.toggle('on',v==='chat');
+}
+function tab(btn,label){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('enter-btn').textContent=(label==='登录'?'进入蜂巢 →':'创建账号 →');
+}
+function pickHive(el,name){
+  el.parentElement.querySelectorAll('.hive').forEach(h=>h.classList.remove('on'));
+  el.classList.add('on');
+}
+function pickChan(el,name,topic){
+  el.parentElement.querySelectorAll('.chan').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('ch-name').textContent='# '+name;
+  document.getElementById('ch-topic').textContent=topic;
+  document.getElementById('inp').placeholder='在 # '+name+' 说点什么…（/help 试试命令）';
+}
+function rx(el){
+  el.classList.toggle('on');
+  const s=el.querySelector('span');
+  s.textContent=(+s.textContent)+(el.classList.contains('on')?1:-1);
+}
+let achvShown=false;
+function sendMsg(){
+  const inp=document.getElementById('inp');
+  const t=inp.value.trim();if(!t)return;inp.value='';
+  const msgs=document.getElementById('msgs');
+  const typing=msgs.querySelector('.typing');
+  const m=document.createElement('div');m.className='msg';
+  m.innerHTML=`<div class="av a-blue">A</div><div class="body">
+    <div class="meta"><span class="nm">阿风</span><span class="tm">现在</span></div>
+    <div class="bubble mine">${t.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</div>
+    <div class="reacts"><div class="react" onclick="rx(this)">👍 <span>0</span></div></div></div>`;
+  msgs.insertBefore(m,typing);
+  msgs.scrollTop=msgs.scrollHeight;
+  if(!achvShown){achvShown=true;const a=document.getElementById('achv');
+    a.style.display='flex';a.style.animation='none';void a.offsetWidth;a.style.animation='pop .5s both';
+    setTimeout(()=>a.style.display='none',3200);}
+}
+// 进聊天页时把成就吐司先藏起来，发消息再弹
+document.getElementById('achv').style.display='none';
+</script>
+</body>
+</html>

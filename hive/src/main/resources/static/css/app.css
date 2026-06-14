@@ -44,6 +44,8 @@ body {
 }
 
 ::selection { background: var(--honey); color: #221a08; }
+::placeholder { color: var(--text-dim); opacity: .8; }
+:focus-visible { outline: 2px solid var(--honey-deep); outline-offset: 2px; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -296,6 +298,9 @@ a:hover { text-decoration: underline; }
 }
 .rail-item:hover .pill { height: 18px; }
 .rail-item.active .pill { height: 34px; }
+/* clip-path 会裁掉 box-shadow，用 drop-shadow 给选中蜂巢加金色光晕 */
+.rail-item.active .rail-hex,
+.rail-home.active { filter: drop-shadow(0 0 7px var(--honey-glow)); }
 
 .rail-action {
   background: var(--bg-raised);
@@ -560,6 +565,13 @@ a:hover { text-decoration: underline; }
 .msg-row.grouped { padding-top: 1px; }
 .msg-row.grouped .msg-avatar { visibility: hidden; height: 0; }
 .msg-row.grouped .msg-meta { display: none; }
+.msg-row.grouped::before {
+  content: attr(data-time);
+  position: absolute; left: 16px; top: 7px;
+  font-size: 10px; color: var(--text-dim);
+  opacity: 0; transition: opacity .12s;
+}
+.msg-row.grouped:hover::before { opacity: 1; }
 .msg-row.pending { opacity: .55; }
 .msg-row.failed .msg-content { color: var(--danger); }
 
@@ -629,6 +641,7 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   cursor: pointer;
   transition: all .12s;
+  animation: badgePop .18s ease;
 }
 .reaction-chip .rc-count { font-size: 11.5px; color: var(--text-mid); font-weight: 700; }
 .reaction-chip:hover { border-color: var(--honey-deep); transform: translateY(-1px); }
@@ -667,6 +680,7 @@ a:hover { text-decoration: underline; }
   background: var(--bg-raised);
   display: flex; align-items: center; justify-content: center;
   font-size: 38px;
+  animation: brandPulse 3.5s ease-in-out infinite;
 }
 
 /* 输入中提示 */
@@ -887,7 +901,12 @@ a:hover { text-decoration: underline; }
   z-index: 400;
   cursor: zoom-out;
 }
-.lightbox img { max-width: 88vw; max-height: 88vh; border-radius: 10px; }
+.lightbox img {
+  max-width: 88vw; max-height: 88vh;
+  border-radius: 10px;
+  animation: lbIn .22s ease;
+}
+@keyframes lbIn { from { transform: scale(.92); opacity: .4; } }
 
 .emoji-pop {
   position: fixed;

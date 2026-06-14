@@ -81,6 +81,16 @@ export function showModal({ title, sub, body, actions = [], onClose }) {
     }
     mask.appendChild(box);
     mask.onmousedown = (e) => { if (e.target === mask) close(); };
+    // 输入框内回车 = 点击主操作按钮（textarea 与输入法选词除外）
+    box.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.isComposing && e.target.tagName === "INPUT") {
+            const primary = box.querySelector(".modal-actions .btn-honey, .modal-actions .btn-danger");
+            if (primary) {
+                e.preventDefault();
+                primary.click();
+            }
+        }
+    });
     $("modal-root").appendChild(mask);
 
     function close() {
@@ -124,10 +134,21 @@ export function showCtx(x, y, items) {
     const r = menu.getBoundingClientRect();
     menu.style.left = Math.min(x, innerWidth - r.width - 8) + "px";
     menu.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
-    setTimeout(() => addEventListener("mousedown", closeCtxOnce, { once: true }), 0);
+    // 延迟注册，避免"打开菜单的那次点击"立刻把菜单关掉
+    setTimeout(() => addEventListener("mousedown", ctxAway), 0);
 }
-const closeCtxOnce = () => closeCtx();
-export const closeCtx = () => { $("ctx-root").innerHTML = ""; };
+
+/** 只有点击发生在菜单外部才关闭——点中菜单项时让其 click 正常派发 */
+function ctxAway(e) {
+    if (!$("ctx-root").contains(e.target)) {
+        closeCtx();
+    }
+}
+
+export const closeCtx = () => {
+    $("ctx-root").innerHTML = "";
+    removeEventListener("mousedown", ctxAway);
+};
 
 // ---------- 轻提示 ----------
 

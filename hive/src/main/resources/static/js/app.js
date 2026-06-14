@@ -261,6 +261,7 @@ function renderTree() {
         }
     };
     renderLevel(0, tree);
+    updateTitle();
 }
 
 function buildCategory(cat, byParent, renderLevel) {
@@ -429,6 +430,11 @@ function buildMsgRow(m, prev) {
 
     const row = el("div", "msg-row" + (grouped ? " grouped" : "") + (m.pending ? " pending" : ""));
     row.dataset.id = m.id ?? "";
+    if (grouped) {
+        // 合并消息悬停时在左侧时间槽显示具体时间
+        const d = new Date(m.createdAt);
+        row.dataset.time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
     if (m.nonce) row.dataset.nonce = m.nonce;
 
     const avatar = hexAvatar({ nickname: m.senderNickname, avatarColor: m.senderAvatarColor, avatarUrl: m.senderAvatarUrl }, "");
@@ -438,7 +444,8 @@ function buildMsgRow(m, prev) {
     const body = el("div", "msg-body");
     if (m.replyToId) {
         const quote = el("div", "msg-reply-quote");
-        quote.innerHTML = `↩ <b>${esc(m.replySenderNickname ?? "未知")}</b>：${esc(m.replyContent ?? "")}`;
+        const snippet = (m.replyContent ?? "").startsWith("/uploads/") ? "[图片]" : (m.replyContent ?? "");
+        quote.innerHTML = `↩ <b>${esc(m.replySenderNickname ?? "未知")}</b>：${esc(snippet)}`;
         quote.onclick = () => jumpToMessage(m.replyToId);
         body.appendChild(quote);
     }
@@ -1203,12 +1210,18 @@ function openSearchModal() {
             }
             for (const h of hits) {
                 const row = el("div", "search-hit");
+                row.style.cursor = "pointer";
+                row.title = "点击跳转到该频道";
                 const meta = el("div", "sh-meta");
                 meta.innerHTML = `<b>⬡ ${esc(h.channelName)}</b><span>${esc(h.senderNickname ?? "系统")}</span><span>${fmtTime(h.createdAt)}</span>`;
                 row.appendChild(meta);
                 const content = el("div", "sh-content");
                 content.innerHTML = renderContent(h.content);
                 row.appendChild(content);
+                row.onclick = () => {
+                    closeModal();
+                    if (h.channelId !== state.currentChannelId) selectChannel(h.channelId);
+                };
                 results.appendChild(row);
             }
         } catch (err) {
@@ -1411,6 +1424,18 @@ function updateHomeDot() {
         (sum, d) => sum + (d.channelId === state.currentChannelId ? 0 : (d.unread ?? 0)), 0);
     const n = unread + state.requests.length;
     $("home-dot").classList.toggle("hidden", n === 0);
+    updateTitle();
+}
+
+/** 浏览器标签页未读角标：(n) 蜂巢 Hive */
+function updateTitle() {
+    let n = 0;
+    state.unreads.forEach((c) => { n += c; });
+    n += state.dms.reduce(
+        (sum, d) => sum + (d.channelId === state.currentChannelId ? 0 : (d.unread ?? 0)), 0);
+    document.title = n > 0
+        ? `(${n > 99 ? "99+" : n}) 蜂巢 Hive`
+        : "蜂巢 Hive · 嗡嗡作响的地方";
 }
 
 async function enterHome() {
@@ -1655,7 +1680,11 @@ function bindStatic() {
 
     const input = $("composer-input");
     input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        // isComposing：中文输入法选词时的回车不发送
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            sendMessage();
+        }
     });
     input.addEventListener("input", () => {
         autoSize(input);
