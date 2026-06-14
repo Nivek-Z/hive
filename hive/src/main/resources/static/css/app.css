@@ -260,7 +260,9 @@ a:hover { text-decoration: underline; }
 .app-view {
   display: grid;
   grid-template-columns: 76px 248px 1fr 232px;
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
+  overflow: hidden;
 }
 
 /* ---------- 第一栏：蜂巢条 ---------- */
@@ -512,7 +514,7 @@ a:hover { text-decoration: underline; }
 .chat {
   background: var(--bg-chat);
   display: flex; flex-direction: column;
-  min-width: 0;
+  min-width: 0; min-height: 0;
   animation: colIn .5s ease both;
   position: relative;
 }
@@ -541,7 +543,7 @@ a:hover { text-decoration: underline; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.msg-scroll { flex: 1; overflow-y: auto; position: relative; z-index: 1; }
+.msg-scroll { flex: 1; min-height: 0; overflow-y: auto; position: relative; z-index: 1; }
 .msg-list { padding: 18px 0 8px; display: flex; flex-direction: column; }
 
 .date-divider {
