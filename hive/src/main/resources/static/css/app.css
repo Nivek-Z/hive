@@ -1034,3 +1034,49 @@ a:hover { text-decoration: underline; }
   .auth-view { grid-template-columns: 1fr; }
   .auth-brand { display: none; }
 }
+
+/* ============================================================
+   手机适配（≤640px）：导航层 / 聊天层 分屏 + 成员抽屉
+   ============================================================ */
+.mobile-only { display: none !important; }
+
+@media (max-width: 640px) {
+  /* 动态视口高度：避免移动浏览器地址栏遮挡底部输入框 */
+  .app-view, .auth-view { height: 100vh; height: 100dvh; }
+
+  /* 第一层（导航）：蜂巢条 + 频道树铺满；聊天区做成可滑入的覆盖层 */
+  .app-view { grid-template-columns: 56px 1fr; }
+
+  .chat {
+    position: fixed; inset: 0;
+    transform: translateX(100%);
+    transition: transform .26s ease;
+    z-index: 60;
+  }
+  .app-view.mobile-chat .chat { transform: translateX(0); }
+
+  /* 返回 / 成员 按钮仅手机显示 */
+  .mobile-only { display: inline-flex !important; }
+  #btn-mobile-back { font-size: 22px; }
+
+  /* 第四栏成员：右侧抽屉 */
+  .members {
+    display: flex;
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(280px, 82vw);
+    transform: translateX(100%);
+    transition: transform .26s ease;
+    z-index: 80;
+    box-shadow: -10px 0 36px rgba(0, 0, 0, .5);
+  }
+  .app-view.members-open .members { transform: translateX(0); }
+  .members-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 70; animation: fadeIn .15s ease; }
+
+  /* 触摸与空间优化 */
+  .rail { padding: 10px 0; }
+  .rail-hex { width: 46px; height: 51px; font-size: 17px; }
+  .rail-action, .rail-home { font-size: 20px; }
+  .friends-view { padding: 18px 16px; }
+  .ach-grid, .perm-grid { grid-template-columns: 1fr; }
+  .msg-row { padding-left: 12px; padding-right: 14px; }
+}

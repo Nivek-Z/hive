@@ -201,6 +201,7 @@ async function selectHive(hiveId) {
     renderMembers();
     const firstText = state.detail.channels.find((c) => c.type === "TEXT");
     await selectChannel(firstText ? firstText.id : null);
+    mobileBackToNav();
 }
 
 async function refreshHiveDetail() {
@@ -347,6 +348,7 @@ async function selectChannel(channelId) {
     }
     await loadHistory(true);
     markRead();
+    mobileEnterChat();
 }
 
 async function loadHistory(initial) {
@@ -1438,6 +1440,28 @@ function updateTitle() {
         : "蜂巢 Hive · 嗡嗡作响的地方";
 }
 
+/* ---------- 移动端导航：导航层 / 聊天层 切换 + 成员抽屉 ---------- */
+function mobileEnterChat() { setMobileChat(true); }
+function mobileBackToNav() { setMobileChat(false); }
+function setMobileChat(showChat) {
+    $("app-view").classList.toggle("mobile-chat", showChat);
+    membersDrawer(false);
+}
+function membersDrawer(open) {
+    const av = $("app-view");
+    const isOpen = open === undefined ? !av.classList.contains("members-open") : open;
+    av.classList.toggle("members-open", isOpen);
+    let bd = $("members-backdrop");
+    if (isOpen && !bd) {
+        bd = el("div", "members-backdrop");
+        bd.id = "members-backdrop";
+        bd.onclick = () => membersDrawer(false);
+        document.body.appendChild(bd);
+    } else if (!isOpen && bd) {
+        bd.remove();
+    }
+}
+
 async function enterHome() {
     state.mode = "home";
     state.currentChannelId = null;
@@ -1457,6 +1481,7 @@ async function enterHome() {
     renderDmList();
     renderFriendsView();
     renderHomeMembers();
+    mobileBackToNav();
 }
 
 /** 侧栏：好友入口 + 私信会话列表 */
@@ -1478,6 +1503,7 @@ function renderDmList() {
         setComposerVisible(false);
         renderDmList();
         renderFriendsView();
+        mobileEnterChat();
     };
     tree.appendChild(friendsRow);
 
@@ -1524,6 +1550,7 @@ async function selectDm(conv) {
     conv.unread = 0;
     renderDmList();
     updateHomeDot();
+    mobileEnterChat();
 }
 
 /** 与某人开启私聊（好友列表/成员菜单入口） */
@@ -1661,6 +1688,8 @@ function autoSize(ta) {
 function bindStatic() {
     bindLightbox();
     $("btn-home").onclick = enterHome;
+    $("btn-mobile-back").onclick = () => mobileBackToNav();
+    $("btn-mobile-members").onclick = () => membersDrawer();
     $("btn-achievements").onclick = openAchievementsModal;
     $("btn-search").onclick = openSearchModal;
     // Konami 秘技：↑↑↓↓←→←→BA → 蜜蜂雨 + 隐藏成就
