@@ -1044,33 +1044,30 @@ a:hover { text-decoration: underline; }
   /* 动态视口高度：避免移动浏览器地址栏遮挡底部输入框 */
   .app-view, .auth-view { height: 100vh; height: 100dvh; }
 
-  /* 第一层（导航）：蜂巢条 + 频道树铺满；聊天区做成可滑入的覆盖层 */
+  /* 导航层：蜂巢条 + 频道树并排铺满 */
   .app-view { grid-template-columns: 56px 1fr; }
 
-  .chat {
-    position: fixed; inset: 0;
-    transform: translateX(100%);
-    transition: transform .26s ease;
+  /* 聊天区 / 成员区默认隐藏，仅在对应状态类时全屏显示。
+     用 display 切换而非 transform —— 因为 .chat/.members 带 colIn 入场动画
+     (结尾 transform:none)，动画优先级高于普通 transform 声明，会把
+     translateX(100%) 的隐藏覆盖掉，导致两块默认就同时显示出来。 */
+  .chat, .members { display: none !important; }
+
+  .app-view.mobile-chat .chat {
+    display: flex !important;
+    position: fixed; left: 0; top: 0; right: 0; bottom: 0;
     z-index: 60;
   }
-  .app-view.mobile-chat .chat { transform: translateX(0); }
-
-  /* 返回 / 成员 按钮仅手机显示 */
-  .mobile-only { display: inline-flex !important; }
-  #btn-mobile-back { font-size: 22px; }
-
-  /* 第四栏成员：右侧抽屉 */
-  .members {
-    display: flex;
-    position: fixed; top: 0; right: 0; bottom: 0;
-    width: min(280px, 82vw);
-    transform: translateX(100%);
-    transition: transform .26s ease;
+  .app-view.members-open .members {
+    display: flex !important;
+    position: fixed; left: 0; top: 0; right: 0; bottom: 0;
+    width: auto;
     z-index: 80;
-    box-shadow: -10px 0 36px rgba(0, 0, 0, .5);
   }
-  .app-view.members-open .members { transform: translateX(0); }
-  .members-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 70; animation: fadeIn .15s ease; }
+
+  /* 返回 / 成员 / 关闭 按钮仅手机显示 */
+  .mobile-only { display: inline-flex !important; }
+  #btn-mobile-back, #btn-members-close { font-size: 22px; }
 
   /* 触摸与空间优化 */
   .rail { padding: 10px 0; }

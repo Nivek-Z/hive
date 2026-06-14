@@ -1451,15 +1451,6 @@ function membersDrawer(open) {
     const av = $("app-view");
     const isOpen = open === undefined ? !av.classList.contains("members-open") : open;
     av.classList.toggle("members-open", isOpen);
-    let bd = $("members-backdrop");
-    if (isOpen && !bd) {
-        bd = el("div", "members-backdrop");
-        bd.id = "members-backdrop";
-        bd.onclick = () => membersDrawer(false);
-        document.body.appendChild(bd);
-    } else if (!isOpen && bd) {
-        bd.remove();
-    }
 }
 
 async function enterHome() {
@@ -1690,6 +1681,7 @@ function bindStatic() {
     $("btn-home").onclick = enterHome;
     $("btn-mobile-back").onclick = () => mobileBackToNav();
     $("btn-mobile-members").onclick = () => membersDrawer();
+    $("btn-members-close").onclick = () => membersDrawer(false);
     $("btn-achievements").onclick = openAchievementsModal;
     $("btn-search").onclick = openSearchModal;
     // Konami 秘技：↑↑↓↓←→←→BA → 蜜蜂雨 + 隐藏成就
