@@ -1,0 +1,65 @@
+# ============================================================
+#  Hive 蜂巢 · 部署示例编排（拉取 GitHub Actions 已发布的镜像）
+#
+#  镜像由 .github/workflows/docker-publish.yml 自动构建并推送到 GHCR。
+#  在任意装了 Docker 的机器上：
+#      cp .env.example .env      # 改端口 / 密码 / 密钥
+#      docker compose up -d
+#
+#  注意：GHCR 包默认私有，拉取前需先登录（公开后可省略）：
+#      echo <你的GitHub_PAT> | docker login ghcr.io -u <你的用户名> --password-stdin
+# ============================================================
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: hive-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${HIVE_DB_PASSWORD:-123456}
+      MYSQL_DATABASE: ${HIVE_DB_NAME:-hive_db}
+      TZ: ${TZ:-Asia/Shanghai}
+    # 服务端字符集 utf8mb4，确保 emoji / 中文正常存储
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - hive-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${HIVE_DB_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    # 已发布镜像（owner 转小写）；可把 latest 换成具体版本号如 :v1.0.0
+    image: ghcr.io/nivek-z/hive:${HIVE_IMAGE_TAG:-latest}
+    container_name: hive-app
+    restart: unless-stopped
+    pull_policy: always
+    # 等 MySQL 健康就绪再启动，避免首次启动连不上库
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # 连接同一 compose 网络内的 mysql 服务（服务名即主机名）
+      HIVE_DB_HOST: mysql
+      HIVE_DB_PORT: 3306
+      HIVE_DB_NAME: ${HIVE_DB_NAME:-hive_db}
+      HIVE_DB_USER: ${HIVE_DB_USER:-root}
+      HIVE_DB_PASSWORD: ${HIVE_DB_PASSWORD:-123456}
+      HIVE_JWT_SECRET: ${HIVE_JWT_SECRET:-hive-2026-course-project-secret-key-7f3a9c1e}
+      HIVE_JWT_EXPIRE_DAYS: ${HIVE_JWT_EXPIRE_DAYS:-7}
+      HIVE_UPLOAD_DIR: /app/uploads
+      SERVER_PORT: 8080
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 左边宿主机端口（改 .env 的 APP_PORT），右边容器内固定 8080
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - hive-uploads:/app/uploads
+
+volumes:
+  hive-mysql-data:   # MySQL 数据持久化（删容器不丢库）
+  hive-uploads:      # 上传图片持久化

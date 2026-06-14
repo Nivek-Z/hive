@@ -5,6 +5,9 @@ uploads/
 logs/
 *.zip
 
+# 部署密钥（含密码/JWT，勿入库）
+.env
+
 # 构建产物
 hive/target/
 
