@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"hive-tui/internal/app"
 	"hive-tui/internal/model"
@@ -76,6 +77,117 @@ func TestChatViewIsBoundedByWindowHeightAndShowsNewestMessages(t *testing.T) {
 	}
 	if strings.Contains(view, "message-00") {
 		t.Fatalf("oldest message should be clipped from bounded view:\n%s", view)
+	}
+}
+
+func TestChatViewFitsUnicodeContentWithinWindowWidth(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels: []model.Channel{
+			{ID: 1, Type: "CATEGORY", Name: "常规", Position: 1},
+			{ID: 2, Type: "TEXT", Name: "大厅", Position: 1},
+		},
+		Messages: []model.Message{
+			{ID: 10, ChannelID: 2, SenderNickname: "system", Content: "🐝 zkw 加入了蜂巢", Type: "SYSTEM"},
+			{ID: 11, ChannelID: 2, SenderNickname: "zkw", Content: "你是不是反革命？😀 /uploads/d0b27d68f3b5476aa0e8d35eba967924.jpg", Type: "TEXT"},
+		},
+		Unreads: map[int64]int{},
+	}
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	view := updated.(app.Model).View()
+	lines := strings.Split(view, "\n")
+
+	if len(lines) > 12 {
+		t.Fatalf("view has %d lines, want <= 12:\n%s", len(lines), view)
+	}
+	for i, line := range lines {
+		if got := lipgloss.Width(line); got > 48 {
+			t.Fatalf("line %d width = %d, want <= 48:\n%s", i, got, view)
+		}
+	}
+	if !strings.Contains(view, "# 大厅") || !strings.Contains(view, "😀") {
+		t.Fatalf("expected unicode channel and message content:\n%s", view)
+	}
+}
+
+func TestChatViewMarksCurrentChannelOutsideNavFocus(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "general", Position: 1}},
+		Messages:         []model.Message{{ID: 10, ChannelID: 2, SenderNickname: "afeng", Content: "hello"}},
+		Unreads:          map[int64]int{},
+	}
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "› # general") {
+		t.Fatalf("current channel should stay marked outside nav focus:\n%s", view)
+	}
+}
+
+func TestPresenceEventDoesNotOverwriteStatus(t *testing.T) {
+	api := &fakeAPI{}
+	m := app.NewModel(app.Dependencies{
+		API: api,
+		ConnectWS: func(ctx context.Context, token string, events chan<- wsproto.Envelope) (app.WSClient, error) {
+			events <- wsproto.Envelope{Type: "PRESENCE", Data: []byte(`{"userId":3,"online":true}`)}
+			return fakeWS{}, nil
+		},
+	})
+	m.Username = "afeng"
+	m.Password = "123456"
+	m.Focus = app.FocusLoginPassword
+
+	updated, loginCmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, eventCmd := updated.Update(loginCmd())
+	if eventCmd == nil {
+		t.Fatal("expected websocket event command")
+	}
+
+	updated, _ = updated.Update(eventCmd())
+	next := updated.(app.Model)
+	if next.Status != "connected" {
+		t.Fatalf("status = %q, want connected", next.Status)
+	}
+}
+
+func TestTypingWhileMessagesFocusedMovesToComposer(t *testing.T) {
+	ws := &recordingWS{}
+	m := app.NewModel(app.Dependencies{WS: ws})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "general"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("你")})
+	next := updated.(app.Model)
+	if next.Focus != app.FocusComposer || next.Input != "你" {
+		t.Fatalf("focus=%v input=%q", next.Focus, next.Input)
+	}
+
+	updated, cmd := next.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected send command")
+	}
+	updated, _ = updated.Update(cmd())
+	next = updated.(app.Model)
+	payload, ok := ws.payload.(wsproto.SendMessage)
+	if !ok || ws.frameType != "MSG_SEND" || payload.Content != "你" {
+		t.Fatalf("sent frame=%q payload=%#v", ws.frameType, ws.payload)
+	}
+	if next.Input != "" {
+		t.Fatalf("input should clear after send, got %q", next.Input)
 	}
 }
 
@@ -185,3 +297,16 @@ type fakeWS struct{}
 
 func (fakeWS) Send(string, any) error { return nil }
 func (fakeWS) Close() error           { return nil }
+
+type recordingWS struct {
+	frameType string
+	payload   any
+}
+
+func (r *recordingWS) Send(frameType string, payload any) error {
+	r.frameType = frameType
+	r.payload = payload
+	return nil
+}
+
+func (*recordingWS) Close() error { return nil }

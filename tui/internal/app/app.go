@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"hive-tui/internal/config"
 	"hive-tui/internal/model"
@@ -161,9 +162,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := json.Unmarshal(msg.env.Data, &payload); err == nil {
 				m.Status = payload.Message
 			}
-		case "PONG", "READY":
+		case "PONG", "READY", "PRESENCE", "TYPING", "REACTION_UPDATE", "ACHIEVEMENT_UNLOCKED":
 		default:
-			m.Status = "ignored websocket event: " + msg.env.Type
+			// The web client receives a broader event stream than this TUI needs.
+			// Unknown non-error events should not make the footer look broken.
 		}
 		return m, cmd
 	}
@@ -245,6 +247,10 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.Focus == FocusMessages {
+		m.Focus = FocusComposer
+		return m, nil
+	}
 	if m.Focus == FocusComposer {
 		text := strings.TrimSpace(m.Input)
 		if text == "" {
@@ -259,11 +265,12 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 func (m Model) handleBackspace() Model {
 	switch {
 	case m.Mode == ModeLogin && m.Focus == FocusLoginUsername && len(m.Username) > 0:
-		m.Username = m.Username[:len(m.Username)-1]
+		m.Username = dropLastRune(m.Username)
 	case m.Mode == ModeLogin && m.Focus == FocusLoginPassword && len(m.Password) > 0:
-		m.Password = m.Password[:len(m.Password)-1]
-	case m.Mode == ModeChat && m.Focus == FocusComposer && len(m.Input) > 0:
-		m.Input = m.Input[:len(m.Input)-1]
+		m.Password = dropLastRune(m.Password)
+	case m.Mode == ModeChat && len(m.Input) > 0:
+		m.Focus = FocusComposer
+		m.Input = dropLastRune(m.Input)
 	}
 	return m
 }
@@ -274,7 +281,8 @@ func (m Model) handleRunes(s string) Model {
 		m.Username += s
 	case m.Mode == ModeLogin && m.Focus == FocusLoginPassword:
 		m.Password += s
-	case m.Mode == ModeChat && m.Focus == FocusComposer:
+	case m.Mode == ModeChat:
+		m.Focus = FocusComposer
 		m.Input += s
 	}
 	return m
@@ -394,56 +402,66 @@ func (m Model) loginView() string {
 
 func (m Model) chatView() string {
 	channels := tree.BuildVisible(m.State.Channels, m.State.Unreads)
-	left := []string{"Hive"}
+	width := max(24, m.width)
+	height := max(1, m.height)
+	if height == 1 {
+		return truncateCells(m.statusLine(width), width)
+	}
+	if height == 2 {
+		return strings.Join([]string{
+			m.composerLine(width),
+			m.statusLine(width),
+		}, "\n")
+	}
+
+	bodyHeight := height - 2
+	leftWidth := navWidthFor(width)
+	rightWidth := max(8, width-leftWidth-1)
+
+	left := []string{fmt.Sprintf("Hive · %d", len(m.visibleTextChannels()))}
 	selectedTextIndex := 0
 	for _, channel := range channels {
 		prefix := "  "
 		if channel.Type == "TEXT" {
-			if selectedTextIndex == m.selectedChannel && m.Focus == FocusNav {
+			switch {
+			case selectedTextIndex == m.selectedChannel && m.Focus == FocusNav:
 				prefix = "> "
+			case channel.ID == m.State.CurrentChannelID:
+				prefix = "› "
 			}
 			selectedTextIndex++
 		}
 		name := channel.Name
 		if channel.Type == "TEXT" {
 			name = "# " + name
+		} else {
+			name = "▾ " + name
 		}
 		if channel.Unread > 0 {
-			name = fmt.Sprintf("%s (%d)", name, channel.Unread)
+			name = fmt.Sprintf("%s · %d", name, channel.Unread)
 		}
 		left = append(left, prefix+strings.Repeat("  ", channel.Depth)+name)
 	}
 
-	paneHeight := max(3, m.height-2)
-	right := []string{m.currentChannelTitle()}
-	for _, message := range m.visibleMessages(paneHeight - 1) {
-		author := message.SenderNickname
-		if author == "" {
-			author = "system"
-		}
-		right = append(right, fmt.Sprintf("%s  %s", author, message.Content))
-	}
+	right := []string{m.currentChannelHeader()}
+	right = append(right, m.visibleMessageLines(bodyHeight-1, rightWidth)...)
 
-	prompt := " "
-	if m.Focus == FocusComposer {
-		prompt = ">"
-	}
-	input := prompt + " " + m.Input
-	status := fmt.Sprintf("connected | focus: %s | Up/Down move/scroll | Left/Right focus | Enter select/send | %s",
-		focusName(m.Focus), m.Status)
-	if m.messageScroll > 0 {
-		status = fmt.Sprintf("%s | scroll: -%d", status, m.messageScroll)
-	}
-
-	return renderColumns(left, right, paneHeight, m.width) + "\n" +
-		truncate(input, max(10, m.width)) + "\n" +
-		truncate(status, max(10, m.width))
+	return renderChatColumns(left, right, bodyHeight, leftWidth, rightWidth) + "\n" +
+		m.composerLine(width) + "\n" +
+		m.statusLine(width)
 }
 
-func (m Model) currentChannelTitle() string {
+func (m Model) currentChannelHeader() string {
 	for _, channel := range m.State.Channels {
 		if channel.ID == m.State.CurrentChannelID {
-			return "# " + channel.Name
+			header := fmt.Sprintf("# %s · %d messages", channel.Name, len(m.State.Messages))
+			if channel.Topic != "" {
+				header = fmt.Sprintf("%s · %s", header, channel.Topic)
+			}
+			if m.messageScroll > 0 {
+				header = fmt.Sprintf("%s · -%d", header, m.messageScroll)
+			}
+			return header
 		}
 	}
 	return "# channel"
@@ -459,27 +477,38 @@ func (m Model) visibleTextChannels() []tree.VisibleChannel {
 	return out
 }
 
-func (m Model) visibleMessages(limit int) []model.Message {
-	if limit <= 0 || len(m.State.Messages) == 0 {
+func (m Model) visibleMessageLines(height, width int) []string {
+	if height <= 0 {
 		return nil
 	}
-	end := len(m.State.Messages) - m.messageScroll
-	if end < 0 {
-		end = 0
+	lines := m.messageLines(width)
+	if len(lines) == 0 {
+		return []string{"No messages"}
 	}
-	start := end - limit
-	if start < 0 {
-		start = 0
+	scroll := min(m.messageScroll, max(0, len(lines)-height))
+	end := len(lines) - scroll
+	start := max(0, end-height)
+	return lines[start:end]
+}
+
+func (m Model) messageLines(width int) []string {
+	if width <= 0 {
+		return nil
 	}
-	return m.State.Messages[start:end]
+	var lines []string
+	for _, message := range m.State.Messages {
+		lines = append(lines, formatMessage(message, width)...)
+	}
+	return lines
 }
 
 func (m Model) maxMessageScroll() int {
 	visible := max(1, m.height-3)
-	if len(m.State.Messages) <= visible {
+	lines := m.messageLines(messageWidthFor(m.width))
+	if len(lines) <= visible {
 		return 0
 	}
-	return len(m.State.Messages) - visible
+	return len(lines) - visible
 }
 
 func nextFocus(f Focus) Focus {
@@ -521,13 +550,9 @@ func focusName(f Focus) string {
 	}
 }
 
-func renderColumns(left, right []string, height, width int) string {
+func renderChatColumns(left, right []string, height, leftWidth, rightWidth int) string {
 	if height < 1 {
 		height = 1
-	}
-	leftWidth := 24
-	if width > 0 && width < 70 {
-		leftWidth = max(14, width/3)
 	}
 	lines := make([]string, 0, height)
 	for i := 0; i < height; i++ {
@@ -538,19 +563,164 @@ func renderColumns(left, right []string, height, width int) string {
 		if i < len(right) {
 			r = right[i]
 		}
-		line := fmt.Sprintf("%-*s | %s", leftWidth, truncate(l, leftWidth), r)
-		lines = append(lines, truncate(line, max(10, width)))
+		lines = append(lines, fitLine(l, leftWidth)+"│"+fitLine(r, rightWidth))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func truncate(s string, width int) string {
-	runes := []rune(s)
-	if len(runes) <= width {
+func formatMessage(message model.Message, width int) []string {
+	authorWidth := min(12, max(6, width/4))
+	separator := " │ "
+	contentWidth := max(4, width-authorWidth-cellWidth(separator))
+	author := message.SenderNickname
+	if author == "" {
+		author = "system"
+	}
+	content := displayContent(message)
+	wrapped := wrapCells(content, contentWidth)
+	lines := make([]string, 0, len(wrapped))
+	for i, line := range wrapped {
+		name := ""
+		if i == 0 {
+			name = author
+		}
+		lines = append(lines, fitLine(name, authorWidth)+separator+fitLine(line, contentWidth))
+	}
+	return lines
+}
+
+func displayContent(message model.Message) string {
+	content := strings.TrimSpace(message.Content)
+	if content == "" {
+		return ""
+	}
+	if message.Type == "IMAGE" || strings.HasPrefix(content, "/uploads/") {
+		return "[图片] " + content
+	}
+	return content
+}
+
+func wrapCells(s string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+	paragraphs := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	var lines []string
+	for _, paragraph := range paragraphs {
+		if paragraph == "" {
+			lines = append(lines, "")
+			continue
+		}
+		var b strings.Builder
+		used := 0
+		for _, r := range paragraph {
+			rw := runeWidth(r)
+			if used > 0 && used+rw > width {
+				lines = append(lines, b.String())
+				b.Reset()
+				used = 0
+			}
+			b.WriteRune(r)
+			used += rw
+		}
+		lines = append(lines, b.String())
+	}
+	return lines
+}
+
+func (m Model) composerLine(width int) string {
+	prompt := "›"
+	if m.Focus == FocusNav {
+		prompt = " "
+	}
+	return fitLine(prompt+" "+m.Input, width)
+}
+
+func (m Model) statusLine(width int) string {
+	parts := []string{connectionStatus(m.Status), focusName(m.Focus), "↑/↓ move/scroll", "←/→ focus", "Enter select/send"}
+	if m.messageScroll > 0 {
+		parts = append(parts, fmt.Sprintf("scroll -%d", m.messageScroll))
+	}
+	if m.Status != "" && m.Status != "connected" && !strings.HasPrefix(m.Status, "server ") {
+		parts = append(parts, m.Status)
+	}
+	return truncateCells(strings.Join(parts, " | "), width)
+}
+
+func connectionStatus(status string) string {
+	if strings.Contains(strings.ToLower(status), "disconnected") {
+		return "offline"
+	}
+	return "connected"
+}
+
+func navWidthFor(width int) int {
+	if width < 54 {
+		return max(14, width/3)
+	}
+	return min(30, max(22, width/4))
+}
+
+func messageWidthFor(width int) int {
+	width = max(24, width)
+	return max(8, width-navWidthFor(width)-1)
+}
+
+func fitLine(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = truncateCells(s, width)
+	if padding := width - cellWidth(s); padding > 0 {
+		return s + strings.Repeat(" ", padding)
+	}
+	return s
+}
+
+func truncateCells(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if cellWidth(s) <= width {
 		return s
 	}
-	if width <= 1 {
-		return string(runes[:width])
+	ellipsis := "…"
+	ellipsisWidth := cellWidth(ellipsis)
+	if width <= ellipsisWidth {
+		return strings.Repeat(".", width)
 	}
-	return string(runes[:width-1]) + "…"
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		rw := runeWidth(r)
+		if used+rw+ellipsisWidth > width {
+			break
+		}
+		b.WriteRune(r)
+		used += rw
+	}
+	return b.String() + ellipsis
+}
+
+func cellWidth(s string) int {
+	return lipgloss.Width(s)
+}
+
+func runeWidth(r rune) int {
+	if r == '\t' {
+		return 4
+	}
+	width := runewidth.RuneWidth(r)
+	if width < 0 {
+		return 0
+	}
+	return width
+}
+
+func dropLastRune(s string) string {
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return ""
+	}
+	return string(runes[:len(runes)-1])
 }
