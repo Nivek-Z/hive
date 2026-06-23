@@ -4,6 +4,7 @@ import "hive-tui/internal/model"
 
 type State struct {
 	CurrentChannelID int64
+	Channels         []model.Channel
 	Messages         []model.Message
 	Unreads          map[int64]int
 }
