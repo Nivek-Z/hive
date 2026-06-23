@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,6 +41,41 @@ func TestChatModelRendersChannelsAndMessages(t *testing.T) {
 
 	if !strings.Contains(view, "# general") || !strings.Contains(view, "hello") || !strings.Contains(view, "connected") {
 		t.Fatalf("unexpected chat view:\n%s", view)
+	}
+}
+
+func TestChatViewIsBoundedByWindowHeightAndShowsNewestMessages(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels: []model.Channel{
+			{ID: 2, Type: "TEXT", Name: "general", Position: 1},
+		},
+		Unreads: map[int64]int{},
+	}
+	for i := range 30 {
+		m.State.Messages = append(m.State.Messages, model.Message{
+			ID:             int64(i + 1),
+			ChannelID:      2,
+			SenderNickname: "nivek",
+			Content:        fmt.Sprintf("message-%02d", i),
+			Type:           "TEXT",
+		})
+	}
+	m.Mode = app.ModeChat
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	view := updated.(app.Model).View()
+	lines := strings.Split(view, "\n")
+
+	if len(lines) > 10 {
+		t.Fatalf("view has %d lines, want <= 10:\n%s", len(lines), view)
+	}
+	if !strings.Contains(view, "message-29") {
+		t.Fatalf("expected newest message in bounded view:\n%s", view)
+	}
+	if strings.Contains(view, "message-00") {
+		t.Fatalf("oldest message should be clipped from bounded view:\n%s", view)
 	}
 }
 

@@ -67,6 +67,9 @@ type Model struct {
 	Input    string
 
 	selectedChannel int
+	width           int
+	height          int
+	messageScroll   int
 }
 
 type incomingMessageMsg struct {
@@ -96,6 +99,8 @@ func NewModel(deps Dependencies) Model {
 		Deps:   deps,
 		Status: "server " + deps.Config.RawHost,
 		State:  State{Unreads: map[int64]int{}},
+		width:  80,
+		height: 24,
 	}
 }
 
@@ -105,6 +110,10 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	case incomingMessageMsg:
@@ -135,6 +144,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var payload wsproto.MessageNew
 			if err := json.Unmarshal(msg.env.Data, &payload); err == nil {
 				m.State.ApplyIncomingMessage(payload.Message)
+				if payload.Message.ChannelID == m.State.CurrentChannelID {
+					m.messageScroll = 0
+				}
 				if payload.Message.ChannelID == m.State.CurrentChannelID && m.Deps.API != nil && payload.Message.ID != 0 {
 					_ = m.Deps.API.MarkRead(context.Background(), payload.Message.ChannelID, payload.Message.ID)
 				}
@@ -185,13 +197,25 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyUp:
-		if m.Mode == ModeChat && m.Focus == FocusNav && m.selectedChannel > 0 {
-			m.selectedChannel--
+		if m.Mode == ModeChat {
+			switch {
+			case m.Focus == FocusNav && m.selectedChannel > 0:
+				m.selectedChannel--
+			case m.Focus == FocusMessages:
+				m.messageScroll = min(m.messageScroll+1, m.maxMessageScroll())
+			case m.Focus == FocusComposer:
+				m.messageScroll = min(m.messageScroll+1, m.maxMessageScroll())
+			}
 		}
 		return m, nil
 	case tea.KeyDown:
-		if m.Mode == ModeChat && m.Focus == FocusNav && m.selectedChannel < len(m.visibleTextChannels())-1 {
-			m.selectedChannel++
+		if m.Mode == ModeChat {
+			switch {
+			case m.Focus == FocusNav && m.selectedChannel < len(m.visibleTextChannels())-1:
+				m.selectedChannel++
+			case (m.Focus == FocusMessages || m.Focus == FocusComposer) && m.messageScroll > 0:
+				m.messageScroll--
+			}
 		}
 		return m, nil
 	case tea.KeyEnter:
@@ -216,6 +240,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		textChannels := m.visibleTextChannels()
 		if m.selectedChannel >= 0 && m.selectedChannel < len(textChannels) {
 			m.State.SelectChannel(textChannels[m.selectedChannel].ID)
+			m.messageScroll = 0
 			m.Focus = FocusComposer
 		}
 		return m, nil
@@ -389,8 +414,9 @@ func (m Model) chatView() string {
 		left = append(left, prefix+strings.Repeat("  ", channel.Depth)+name)
 	}
 
+	paneHeight := max(3, m.height-2)
 	right := []string{m.currentChannelTitle()}
-	for _, message := range m.State.Messages {
+	for _, message := range m.visibleMessages(paneHeight - 1) {
 		author := message.SenderNickname
 		if author == "" {
 			author = "system"
@@ -398,9 +424,20 @@ func (m Model) chatView() string {
 		right = append(right, fmt.Sprintf("%s  %s", author, message.Content))
 	}
 
-	return renderColumns(left, right) + "\n" +
-		"> " + m.Input + "\n" +
-		"connected | Up/Down move or scroll | Left/Right focus | Enter select/send | " + m.Status
+	prompt := " "
+	if m.Focus == FocusComposer {
+		prompt = ">"
+	}
+	input := prompt + " " + m.Input
+	status := fmt.Sprintf("connected | focus: %s | Up/Down move/scroll | Left/Right focus | Enter select/send | %s",
+		focusName(m.Focus), m.Status)
+	if m.messageScroll > 0 {
+		status = fmt.Sprintf("%s | scroll: -%d", status, m.messageScroll)
+	}
+
+	return renderColumns(left, right, paneHeight, m.width) + "\n" +
+		truncate(input, max(10, m.width)) + "\n" +
+		truncate(status, max(10, m.width))
 }
 
 func (m Model) currentChannelTitle() string {
@@ -420,6 +457,29 @@ func (m Model) visibleTextChannels() []tree.VisibleChannel {
 		}
 	}
 	return out
+}
+
+func (m Model) visibleMessages(limit int) []model.Message {
+	if limit <= 0 || len(m.State.Messages) == 0 {
+		return nil
+	}
+	end := len(m.State.Messages) - m.messageScroll
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	return m.State.Messages[start:end]
+}
+
+func (m Model) maxMessageScroll() int {
+	visible := max(1, m.height-3)
+	if len(m.State.Messages) <= visible {
+		return 0
+	}
+	return len(m.State.Messages) - visible
 }
 
 func nextFocus(f Focus) Focus {
@@ -444,10 +504,30 @@ func prevFocus(f Focus) Focus {
 	}
 }
 
-func renderColumns(left, right []string) string {
-	height := len(left)
-	if len(right) > height {
-		height = len(right)
+func focusName(f Focus) string {
+	switch f {
+	case FocusNav:
+		return "nav"
+	case FocusMessages:
+		return "messages"
+	case FocusComposer:
+		return "composer"
+	case FocusLoginUsername:
+		return "username"
+	case FocusLoginPassword:
+		return "password"
+	default:
+		return "unknown"
+	}
+}
+
+func renderColumns(left, right []string, height, width int) string {
+	if height < 1 {
+		height = 1
+	}
+	leftWidth := 24
+	if width > 0 && width < 70 {
+		leftWidth = max(14, width/3)
 	}
 	lines := make([]string, 0, height)
 	for i := 0; i < height; i++ {
@@ -458,7 +538,8 @@ func renderColumns(left, right []string) string {
 		if i < len(right) {
 			r = right[i]
 		}
-		lines = append(lines, fmt.Sprintf("%-24s | %s", truncate(l, 24), r))
+		line := fmt.Sprintf("%-*s | %s", leftWidth, truncate(l, leftWidth), r)
+		lines = append(lines, truncate(line, max(10, width)))
 	}
 	return strings.Join(lines, "\n")
 }
