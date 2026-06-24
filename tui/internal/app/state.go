@@ -4,9 +4,13 @@ import "hive-tui/internal/model"
 
 type State struct {
 	CurrentChannelID int64
+	CurrentHiveID    int64
+	Hives            []model.Hive
 	Channels         []model.Channel
 	Messages         []model.Message
 	Unreads          map[int64]int
+	CurrentUser      model.User
+	OnlineUserIDs    []int64
 }
 
 func (s *State) SelectChannel(channelID int64) {

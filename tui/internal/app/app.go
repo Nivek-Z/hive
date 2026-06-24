@@ -43,6 +43,28 @@ const (
 	PanelConfig
 )
 
+type menuAction int
+
+const (
+	menuActionSend menuAction = iota
+	menuActionFriends
+	menuActionMembers
+	menuActionConfig
+	menuActionJumpLatest
+	menuActionNavOpen
+	menuActionSwitchHive
+	menuActionRefreshChannels
+	menuActionLogin
+	menuActionRegister
+	menuActionQuit
+)
+
+type menuItem struct {
+	Label  string
+	Hint   string
+	Action menuAction
+}
+
 type Dependencies struct {
 	Config    config.NormalizedConfig
 	API       APIClient
@@ -83,6 +105,8 @@ type Model struct {
 	navCursor     int
 	collapsed     map[int64]bool
 	panel         Panel
+	menuOpen      bool
+	menuCursor    int
 }
 
 type incomingMessageMsg struct {
@@ -194,7 +218,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := json.Unmarshal(msg.env.Data, &payload); err == nil {
 				m.Status = payload.Message
 			}
-		case "PONG", "READY", "PRESENCE", "TYPING", "REACTION_UPDATE", "ACHIEVEMENT_UNLOCKED":
+		case "READY":
+			var payload wsproto.Ready
+			if err := json.Unmarshal(msg.env.Data, &payload); err == nil {
+				if payload.User.ID != 0 {
+					m.State.CurrentUser = payload.User
+				}
+				m.State.OnlineUserIDs = append([]int64(nil), payload.OnlineUserIDs...)
+			}
+		case "PONG", "PRESENCE", "TYPING", "REACTION_UPDATE", "ACHIEVEMENT_UNLOCKED":
 		default:
 			// The web client receives a broader event stream than this TUI needs.
 			// Unknown non-error events should not make the footer look broken.
@@ -215,7 +247,19 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
+	case tea.KeyTab:
+		m.menuOpen = !m.menuOpen
+		m.menuCursor = 0
+		if m.menuOpen {
+			m.panel = PanelNone
+		}
+		return m, nil
 	case tea.KeyEsc:
+		if m.menuOpen {
+			m.menuOpen = false
+			m.Status = "menu closed"
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			if m.panel != PanelNone {
 				m.panel = PanelNone
@@ -226,16 +270,26 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyRight:
+		if m.menuOpen {
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			m.Focus = nextFocus(m.Focus)
 		}
 		return m, nil
 	case tea.KeyLeft:
+		if m.menuOpen {
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			m.Focus = prevFocus(m.Focus)
 		}
 		return m, nil
 	case tea.KeyUp:
+		if m.menuOpen {
+			m.moveMenuCursor(-1)
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			switch {
 			case m.Focus == FocusNav && m.navCursor > 0:
@@ -248,6 +302,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyDown:
+		if m.menuOpen {
+			m.moveMenuCursor(1)
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			switch {
 			case m.Focus == FocusNav && m.navCursor < len(m.visibleNavRows())-1:
@@ -258,10 +316,19 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyEnter:
+		if m.menuOpen {
+			return m.executeMenuSelection()
+		}
 		return m.handleEnter()
 	case tea.KeyBackspace:
+		if m.menuOpen {
+			return m, nil
+		}
 		return m.handleBackspace(), nil
 	case tea.KeyRunes:
+		if m.menuOpen {
+			return m, nil
+		}
 		return m.handleRunes(msg.String()), nil
 	}
 	return m, nil
@@ -364,6 +431,127 @@ func (m *Model) openPanelShortcut(s string) bool {
 	}
 }
 
+func (m *Model) moveMenuCursor(delta int) {
+	items := m.menuItems()
+	if len(items) == 0 {
+		m.menuCursor = 0
+		return
+	}
+	m.menuCursor += delta
+	if m.menuCursor < 0 {
+		m.menuCursor = 0
+	}
+	if m.menuCursor >= len(items) {
+		m.menuCursor = len(items) - 1
+	}
+}
+
+func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
+	items := m.menuItems()
+	if len(items) == 0 {
+		m.menuOpen = false
+		return m, nil
+	}
+	if m.menuCursor < 0 {
+		m.menuCursor = 0
+	}
+	if m.menuCursor >= len(items) {
+		m.menuCursor = len(items) - 1
+	}
+	item := items[m.menuCursor]
+	m.menuOpen = false
+	switch item.Action {
+	case menuActionSend:
+		if m.Mode != ModeChat {
+			return m, nil
+		}
+		text := strings.TrimSpace(m.Input)
+		if text == "" {
+			m.Status = "nothing to send"
+			return m, nil
+		}
+		m.Input = ""
+		return m, m.sendMessageCmd(text)
+	case menuActionFriends:
+		m.panel = PanelFriends
+		m.Status = "friends panel"
+	case menuActionMembers:
+		m.panel = PanelMembers
+		m.Status = "members panel"
+	case menuActionConfig:
+		if m.Mode == ModeChat {
+			m.panel = PanelConfig
+			m.Status = "config panel"
+		} else {
+			m.Status = "server " + m.Deps.Config.RawHost
+		}
+	case menuActionJumpLatest:
+		m.messageScroll = 0
+		m.Status = "latest messages"
+	case menuActionNavOpen:
+		return m.handleEnter()
+	case menuActionSwitchHive:
+		m.Status = "hive switch API not connected"
+	case menuActionRefreshChannels:
+		m.Status = "refresh channels pending"
+	case menuActionLogin:
+		return m, m.loginCmd()
+	case menuActionRegister:
+		m.Status = "register API not connected"
+	case menuActionQuit:
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) menuItems() []menuItem {
+	if m.Mode == ModeLogin {
+		return []menuItem{
+			{Label: "登录", Hint: "Enter", Action: menuActionLogin},
+			{Label: "注册", Hint: "R", Action: menuActionRegister},
+			{Label: "服务器设置", Hint: ",", Action: menuActionConfig},
+			{Label: "退出", Hint: "Ctrl+C", Action: menuActionQuit},
+		}
+	}
+	switch m.Focus {
+	case FocusNav:
+		return []menuItem{
+			{Label: "打开/收放", Hint: "Enter", Action: menuActionNavOpen},
+			{Label: "切换群聊", Hint: "hives", Action: menuActionSwitchHive},
+			{Label: "刷新频道", Hint: "later", Action: menuActionRefreshChannels},
+			{Label: "设置", Hint: ",", Action: menuActionConfig},
+		}
+	case FocusMessages:
+		return []menuItem{
+			{Label: "跳到最新", Hint: "End", Action: menuActionJumpLatest},
+			{Label: "成员列表", Hint: "M", Action: menuActionMembers},
+			{Label: "好友", Hint: "F", Action: menuActionFriends},
+			{Label: "设置", Hint: ",", Action: menuActionConfig},
+		}
+	default:
+		return []menuItem{
+			{Label: "发送消息", Hint: "Enter", Action: menuActionSend},
+			{Label: "好友", Hint: "F", Action: menuActionFriends},
+			{Label: "在线成员", Hint: "M", Action: menuActionMembers},
+			{Label: "设置", Hint: ",", Action: menuActionConfig},
+		}
+	}
+}
+
+func (m Model) menuTitle() string {
+	if m.Mode == ModeLogin {
+		return "LOGIN MENU"
+	}
+	switch m.Focus {
+	case FocusNav:
+		return "NAV MENU"
+	case FocusMessages:
+		return "MESSAGES MENU"
+	default:
+		return "COMPOSER MENU"
+	}
+}
+
 func (m Model) loginCmd() tea.Cmd {
 	return func() tea.Msg {
 		if m.Deps.API == nil {
@@ -389,7 +577,14 @@ func (m Model) loginCmd() tea.Cmd {
 		for _, unread := range detail.Unreads {
 			unreads[unread.ChannelID] = unread.Count
 		}
-		st := State{Channels: detail.Channels, Unreads: unreads}
+		st := State{
+			CurrentHiveID: hives[0].ID,
+			Hives:         hives,
+			Channels:      detail.Channels,
+			Unreads:       unreads,
+			CurrentUser:   resp.User,
+			OnlineUserIDs: []int64{resp.User.ID},
+		}
 		for _, channel := range detail.Channels {
 			if channel.Type == "TEXT" {
 				st.SelectChannel(channel.ID)
@@ -472,7 +667,6 @@ func (m Model) sendMessageCmd(text string) tea.Cmd {
 }
 
 func (m Model) loginView() string {
-	title := lipgloss.NewStyle().Bold(true).Render("Hive TUI")
 	userPrefix := " "
 	passPrefix := " "
 	if m.Focus == FocusLoginUsername {
@@ -481,15 +675,36 @@ func (m Model) loginView() string {
 	if m.Focus == FocusLoginPassword {
 		passPrefix = ">"
 	}
-	return strings.Join([]string{
-		title,
+	lines := []string{
+		"Hive TUI",
+		"terminal chat client",
 		"",
 		fmt.Sprintf("%s Username: %s", userPrefix, m.Username),
 		fmt.Sprintf("%s Password: %s", passPrefix, strings.Repeat("*", len(m.Password))),
 		"",
-		"Enter login | Ctrl+C quit",
-		m.Status,
-	}, "\n")
+		"Tab menu | Enter login | Ctrl+C quit",
+		"server " + m.Deps.Config.RawHost,
+	}
+	if m.menuOpen {
+		lines = append(lines, "")
+		lines = append(lines, m.menuTitle())
+		for i, item := range m.menuItems() {
+			prefix := "  "
+			if i == m.menuCursor {
+				prefix = "> "
+			}
+			line := prefix + item.Label
+			if item.Hint != "" {
+				line = fmt.Sprintf("%-18s %s", line, item.Hint)
+			}
+			lines = append(lines, line)
+		}
+		lines = append(lines, "Esc close")
+	}
+	if m.Status != "" && m.Status != "server "+m.Deps.Config.RawHost {
+		lines = append(lines, "", m.Status)
+	}
+	return renderBox(lines, loginBoxWidth(m.width))
 }
 
 func (m Model) chatView() string {
@@ -507,19 +722,31 @@ func (m Model) chatView() string {
 
 	bodyHeight := height - 2
 	leftWidth := navWidthFor(width)
-	rightWidth := max(8, width-leftWidth-1)
+	infoWidth := infoWidthFor(width)
+	mainWidth := max(8, width-leftWidth-infoWidth-2)
 
 	left := m.navLines()
 
-	right := []string{m.currentChannelHeader()}
-	right = append(right, strings.Repeat("-", rightWidth))
-	if m.panel != PanelNone {
-		right = append(right, m.panelContentLines(bodyHeight-2, rightWidth)...)
+	main := []string{m.currentChannelHeader()}
+	main = append(main, strings.Repeat("-", mainWidth))
+	if m.menuOpen && infoWidth == 0 {
+		main = append(main, m.menuContentLines(bodyHeight-2, mainWidth)...)
+	} else if m.panel != PanelNone {
+		main = append(main, m.panelContentLines(bodyHeight-2, mainWidth)...)
 	} else {
-		right = append(right, m.visibleMessageLines(bodyHeight-2, rightWidth)...)
+		main = append(main, m.visibleMessageLines(bodyHeight-2, mainWidth)...)
 	}
 
-	return renderChatColumns(left, right, bodyHeight, leftWidth, rightWidth) + "\n" +
+	body := renderChatColumns(left, main, bodyHeight, leftWidth, mainWidth)
+	if infoWidth > 0 {
+		info := m.infoLines(bodyHeight, infoWidth)
+		if m.menuOpen {
+			info = m.menuContentLines(bodyHeight, infoWidth)
+		}
+		body = renderChatThreeColumns(left, main, info, bodyHeight, leftWidth, mainWidth, infoWidth)
+	}
+
+	return body + "\n" +
 		m.composerLine(width) + "\n" +
 		m.statusLine(width)
 }
@@ -554,13 +781,41 @@ func (m Model) currentChannelName() string {
 	return "channel"
 }
 
+func (m Model) currentHiveName() string {
+	for _, hive := range m.State.Hives {
+		if hive.ID == m.State.CurrentHiveID && strings.TrimSpace(hive.Name) != "" {
+			return hive.Name
+		}
+	}
+	if len(m.State.Hives) > 0 && strings.TrimSpace(m.State.Hives[0].Name) != "" {
+		return m.State.Hives[0].Name
+	}
+	return "Hive"
+}
+
 type navRow struct {
 	Channel tree.VisibleChannel
 }
 
 func (m Model) navLines() []string {
 	rows := m.visibleNavRows()
-	lines := []string{"Hive"}
+	lines := []string{"Hive", "hives"}
+	hives := m.State.Hives
+	if len(hives) == 0 {
+		hives = []model.Hive{{Name: "Hive"}}
+	}
+	for _, hive := range hives {
+		prefix := "  "
+		if hive.ID == m.State.CurrentHiveID || (m.State.CurrentHiveID == 0 && hive.Name == "Hive") {
+			prefix = "* "
+		}
+		name := hive.Name
+		if strings.TrimSpace(name) == "" {
+			name = "Hive"
+		}
+		lines = append(lines, prefix+name)
+	}
+	lines = append(lines, "channels")
 	for i, row := range rows {
 		lines = append(lines, m.formatNavRow(i, row))
 	}
@@ -752,6 +1007,72 @@ func renderChatColumns(left, right []string, height, leftWidth, rightWidth int) 
 	return strings.Join(lines, "\n")
 }
 
+func renderChatThreeColumns(left, main, info []string, height, leftWidth, mainWidth, infoWidth int) string {
+	if height < 1 {
+		height = 1
+	}
+	lines := make([]string, 0, height)
+	for i := 0; i < height; i++ {
+		l, c, r := "", "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(main) {
+			c = main[i]
+		}
+		if i < len(info) {
+			r = info[i]
+		}
+		lines = append(lines, fitLine(l, leftWidth)+" "+fitLine(c, mainWidth)+" "+fitLine(r, infoWidth))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) infoLines(height, width int) []string {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	userName := displayUserName(m.State.CurrentUser)
+	lines := []string{
+		"ONLINE",
+	}
+	if userName != "" {
+		lines = append(lines, greenDot()+" "+userName)
+	} else if len(m.State.OnlineUserIDs) > 0 {
+		lines = append(lines, fmt.Sprintf("%s %d online", greenDot(), len(m.State.OnlineUserIDs)))
+	} else {
+		lines = append(lines, "members API pending")
+	}
+	if len(m.State.OnlineUserIDs) > 1 && userName != "" {
+		lines = append(lines, fmt.Sprintf("%d online", len(m.State.OnlineUserIDs)))
+	}
+	lines = append(lines,
+		"members API pending",
+		"",
+		"CURRENT",
+		m.currentHiveName(),
+		"#"+m.currentChannelName(),
+		"",
+		"SERVER",
+		m.Deps.Config.RawHost,
+	)
+	if height < len(lines) {
+		return lines[:height]
+	}
+	return lines
+}
+
+func greenDot() string {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("●")
+}
+
+func displayUserName(user model.User) string {
+	if strings.TrimSpace(user.Nickname) != "" {
+		return user.Nickname
+	}
+	return strings.TrimSpace(user.Username)
+}
+
 func formatMessage(message model.Message, width int) []string {
 	metaWidth := max(8, width)
 	author := message.SenderNickname
@@ -934,6 +1255,28 @@ func (m Model) panelContentLines(height, width int) []string {
 	return lines[:height]
 }
 
+func (m Model) menuContentLines(height, width int) []string {
+	items := m.menuItems()
+	lines := []string{"", m.menuTitle()}
+	for i, item := range items {
+		prefix := "  "
+		if i == m.menuCursor {
+			prefix = "> "
+		}
+		line := prefix + item.Label
+		if item.Hint != "" {
+			gap := max(1, width-cellWidth(line)-cellWidth(item.Hint))
+			line = line + strings.Repeat(" ", gap) + item.Hint
+		}
+		lines = append(lines, fitLine(line, width))
+	}
+	lines = append(lines, "", "Esc close")
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	return lines[:height]
+}
+
 func (m Model) composerLine(width int) string {
 	prompt := ">"
 	if m.Focus != FocusComposer {
@@ -947,7 +1290,12 @@ func (m Model) composerLine(width int) string {
 }
 
 func (m Model) statusLine(width int) string {
-	parts := []string{connectionStatus(m.Status), strings.ToUpper(focusName(m.Focus)), "F friends", "M members", ", config", "Enter"}
+	parts := []string{connectionStatus(m.Status), strings.ToUpper(focusName(m.Focus))}
+	if m.menuOpen {
+		parts = append(parts, "Up/Down choose", "Enter select", "Esc close")
+	} else {
+		parts = append(parts, "Tab menu", "Enter")
+	}
 	if m.messageScroll > 0 {
 		parts = append(parts, fmt.Sprintf("scroll -%d", m.messageScroll))
 	}
@@ -971,9 +1319,35 @@ func navWidthFor(width int) int {
 	return min(30, max(22, width/4))
 }
 
+func infoWidthFor(width int) int {
+	if width < 100 {
+		return 0
+	}
+	return min(24, max(18, width/5))
+}
+
+func loginBoxWidth(width int) int {
+	width = max(36, width)
+	return min(46, max(30, width-4))
+}
+
+func renderBox(lines []string, width int) string {
+	if width < 10 {
+		width = 10
+	}
+	border := "+" + strings.Repeat("-", width+2) + "+"
+	out := make([]string, 0, len(lines)+2)
+	out = append(out, border)
+	for _, line := range lines {
+		out = append(out, "| "+fitLine(line, width)+" |")
+	}
+	out = append(out, border)
+	return strings.Join(out, "\n")
+}
+
 func messageWidthFor(width int) int {
 	width = max(24, width)
-	return max(8, width-navWidthFor(width)-1)
+	return max(8, width-navWidthFor(width)-infoWidthFor(width)-2)
 }
 
 func fitLine(s string, width int) string {

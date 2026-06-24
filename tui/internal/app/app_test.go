@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -23,6 +24,39 @@ func TestInitialModelRendersLoginView(t *testing.T) {
 
 	if !strings.Contains(view, "Hive TUI") || !strings.Contains(view, "Username") {
 		t.Fatalf("unexpected login view:\n%s", view)
+	}
+}
+
+func TestLoginViewRendersFramedPanel(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Username = "nivek"
+	m.Password = "123456"
+
+	view := m.View()
+
+	for _, want := range []string{"+", "| Hive TUI", "terminal chat client", "Tab menu", "server localhost:8080"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in framed login view:\n%s", want, view)
+		}
+	}
+}
+
+func TestLoginMenuIncludesRegister(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	menu := updated.(app.Model).View()
+	for _, want := range []string{"LOGIN MENU", "登录", "注册", "服务器设置"} {
+		if !strings.Contains(menu, want) {
+			t.Fatalf("expected %q in login menu:\n%s", want, menu)
+		}
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view := updated.(app.Model).View()
+	if !strings.Contains(view, "register API not connected") {
+		t.Fatalf("expected register placeholder feedback:\n%s", view)
 	}
 }
 
@@ -131,6 +165,68 @@ func TestChatViewMarksCurrentChannelOutsideNavFocus(t *testing.T) {
 
 	if !strings.Contains(view, "* # general") {
 		t.Fatalf("current channel should stay marked outside nav focus:\n%s", view)
+	}
+}
+
+func TestChatViewRendersHivesBeforeChannelsAndRightInfo(t *testing.T) {
+	api := &fakeAPI{
+		loginUser: model.User{ID: 1, Username: "nivek", Nickname: "nivek"},
+		hives:     []model.Hive{{ID: 7, Name: "JAVA 大作业"}},
+	}
+	m := app.NewModel(app.Dependencies{
+		API: api,
+		ConnectWS: func(ctx context.Context, token string, events chan<- wsproto.Envelope) (app.WSClient, error) {
+			events <- wsproto.Envelope{Type: "READY", Data: []byte(`{"user":{"id":1,"username":"nivek","nickname":"nivek"},"onlineUserIds":[1]}`)}
+			return fakeWS{}, nil
+		},
+	})
+	m.Username = "nivek"
+	m.Password = "123456"
+	m.Focus = app.FocusLoginPassword
+
+	updated, loginCmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.Update(loginCmd())
+	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	view := updated.(app.Model).View()
+
+	hivesAt := strings.Index(view, "hives")
+	channelsAt := strings.Index(view, "channels")
+	if hivesAt < 0 || channelsAt < 0 || hivesAt > channelsAt {
+		t.Fatalf("expected hives before channels:\n%s", view)
+	}
+	for _, want := range []string{"JAVA 大作业", "# general", "ONLINE", "●", "nivek", "SERVER"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in polished chat view:\n%s", want, view)
+		}
+	}
+}
+
+func TestLoginCommandStoresHiveAndCurrentUser(t *testing.T) {
+	api := &fakeAPI{
+		loginUser: model.User{ID: 9, Username: "nivek", Nickname: "nivek"},
+		hives:     []model.Hive{{ID: 7, Name: "JAVA 大作业"}},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Username = "nivek"
+	m.Password = "123456"
+	m.Focus = app.FocusLoginPassword
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.Update(cmd())
+	next := updated.(app.Model)
+	state := reflect.ValueOf(next.State)
+
+	hives := state.FieldByName("Hives")
+	if !hives.IsValid() || hives.Len() != 1 {
+		t.Fatalf("expected state to store hives, got %#v", next.State)
+	}
+	currentHiveID := state.FieldByName("CurrentHiveID")
+	if !currentHiveID.IsValid() || currentHiveID.Int() != 7 {
+		t.Fatalf("expected current hive id 7, got %#v", next.State)
+	}
+	currentUser := state.FieldByName("CurrentUser")
+	if !currentUser.IsValid() || currentUser.FieldByName("Username").String() != "nivek" {
+		t.Fatalf("expected current user nivek, got %#v", next.State)
 	}
 }
 
@@ -299,6 +395,74 @@ func TestPlaceholderPanelsOpenAndClose(t *testing.T) {
 	}
 }
 
+func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	composerMenu := updated.(app.Model).View()
+	for _, want := range []string{"COMPOSER MENU", "发送消息", "好友", "在线成员", "设置"} {
+		if !strings.Contains(composerMenu, want) {
+			t.Fatalf("expected %q in composer menu:\n%s", want, composerMenu)
+		}
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	closed := updated.(app.Model).View()
+	if strings.Contains(closed, "COMPOSER MENU") {
+		t.Fatalf("Esc should close menu:\n%s", closed)
+	}
+
+	m.Focus = app.FocusMessages
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	messagesMenu := updated.(app.Model).View()
+	for _, want := range []string{"MESSAGES MENU", "跳到最新", "成员列表"} {
+		if !strings.Contains(messagesMenu, want) {
+			t.Fatalf("expected %q in messages menu:\n%s", want, messagesMenu)
+		}
+	}
+
+	m.Focus = app.FocusNav
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	navMenu := updated.(app.Model).View()
+	for _, want := range []string{"NAV MENU", "打开/收放", "切换群聊"} {
+		if !strings.Contains(navMenu, want) {
+			t.Fatalf("expected %q in nav menu:\n%s", want, navMenu)
+		}
+	}
+}
+
+func TestTabMenuMovesSelectionAndExecutesWithEnter(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	menu := updated.(app.Model).View()
+	if !strings.Contains(menu, "> 在线成员") {
+		t.Fatalf("expected menu cursor on members:\n%s", menu)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view := updated.(app.Model).View()
+	if !strings.Contains(view, "Members") || !strings.Contains(view, "接口未接入") {
+		t.Fatalf("expected members panel after menu selection:\n%s", view)
+	}
+}
+
 func TestConfigPanelShowsCurrentServer(t *testing.T) {
 	cfg := config.Config{ServerURL: "https://chhat.nievkz.org"}.Normalized()
 	m := app.NewModel(app.Dependencies{Config: cfg})
@@ -336,6 +500,24 @@ func TestComposerShowsChannelPlaceholder(t *testing.T) {
 
 	if !strings.Contains(view, "> message #Lobby") {
 		t.Fatalf("expected composer placeholder:\n%s", view)
+	}
+}
+
+func TestStatusLineAdvertisesTabMenu(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 90, Height: 8})
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "Tab menu") || strings.Contains(view, "F friends | M members | , config") {
+		t.Fatalf("expected compact Tab menu hint:\n%s", view)
 	}
 }
 
@@ -469,15 +651,24 @@ func TestLoginCommandConnectsWebSocketAndConsumesEvents(t *testing.T) {
 type fakeAPI struct {
 	readMessageIDs    []int64
 	messagesByChannel map[int64][]model.Message
+	hives             []model.Hive
+	loginUser         model.User
 }
 
 func (f *fakeAPI) Login(context.Context, string, string) (model.LoginResp, error) {
-	return model.LoginResp{Token: "jwt", User: model.User{ID: 1, Username: "afeng"}}, nil
+	user := f.loginUser
+	if user.ID == 0 {
+		user = model.User{ID: 1, Username: "afeng"}
+	}
+	return model.LoginResp{Token: "jwt", User: user}, nil
 }
 
 func (f *fakeAPI) SetToken(string) {}
 
 func (f *fakeAPI) Hives(context.Context) ([]model.Hive, error) {
+	if f.hives != nil {
+		return append([]model.Hive(nil), f.hives...), nil
+	}
 	return []model.Hive{{ID: 1, Name: "Hive"}}, nil
 }
 
