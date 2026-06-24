@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,6 +32,15 @@ const (
 	FocusNav
 	FocusMessages
 	FocusComposer
+)
+
+type Panel int
+
+const (
+	PanelNone Panel = iota
+	PanelFriends
+	PanelMembers
+	PanelConfig
 )
 
 type Dependencies struct {
@@ -67,10 +77,12 @@ type Model struct {
 	Password string
 	Input    string
 
-	selectedChannel int
-	width           int
-	height          int
-	messageScroll   int
+	width         int
+	height        int
+	messageScroll int
+	navCursor     int
+	collapsed     map[int64]bool
+	panel         Panel
 }
 
 type incomingMessageMsg struct {
@@ -84,6 +96,13 @@ type deletedMessageMsg struct {
 
 type statusMsg string
 
+type channelLoadedMsg struct {
+	ChannelID   int64
+	ChannelName string
+	Messages    []model.Message
+	Err         error
+}
+
 type loginCompleteMsg struct {
 	State  State
 	WS     WSClient
@@ -95,13 +114,14 @@ func NewModel(deps Dependencies) Model {
 		deps.Config = config.Config{}.Normalized()
 	}
 	return Model{
-		Mode:   ModeLogin,
-		Focus:  FocusLoginUsername,
-		Deps:   deps,
-		Status: "server " + deps.Config.RawHost,
-		State:  State{Unreads: map[int64]int{}},
-		width:  80,
-		height: 24,
+		Mode:      ModeLogin,
+		Focus:     FocusLoginUsername,
+		Deps:      deps,
+		Status:    "server " + deps.Config.RawHost,
+		State:     State{Unreads: map[int64]int{}},
+		width:     80,
+		height:    24,
+		collapsed: map[int64]bool{},
 	}
 }
 
@@ -126,6 +146,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.Status = string(msg)
 		return m, nil
+	case channelLoadedMsg:
+		if msg.Err != nil {
+			m.Status = msg.Err.Error()
+			return m, nil
+		}
+		if msg.ChannelID == m.State.CurrentChannelID {
+			m.State.Messages = msg.Messages
+			m.messageScroll = 0
+			m.Status = "opened #" + msg.ChannelName
+		}
+		return m, nil
 	case loginCompleteMsg:
 		m.State = msg.State
 		if msg.WS != nil {
@@ -134,6 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Mode = ModeChat
 		m.Focus = FocusComposer
 		m.Status = "connected"
+		m.syncNavCursorToCurrent()
 		if msg.Events != nil {
 			return m, waitForWSEvent(msg.Events)
 		}
@@ -185,6 +217,11 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case tea.KeyEsc:
 		if m.Mode == ModeChat {
+			if m.panel != PanelNone {
+				m.panel = PanelNone
+				m.Status = "panel closed"
+				return m, nil
+			}
 			m.Focus = FocusNav
 		}
 		return m, nil
@@ -201,8 +238,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyUp:
 		if m.Mode == ModeChat {
 			switch {
-			case m.Focus == FocusNav && m.selectedChannel > 0:
-				m.selectedChannel--
+			case m.Focus == FocusNav && m.navCursor > 0:
+				m.navCursor--
 			case m.Focus == FocusMessages:
 				m.messageScroll = min(m.messageScroll+1, m.maxMessageScroll())
 			case m.Focus == FocusComposer:
@@ -213,8 +250,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyDown:
 		if m.Mode == ModeChat {
 			switch {
-			case m.Focus == FocusNav && m.selectedChannel < len(m.visibleTextChannels())-1:
-				m.selectedChannel++
+			case m.Focus == FocusNav && m.navCursor < len(m.visibleNavRows())-1:
+				m.navCursor++
 			case (m.Focus == FocusMessages || m.Focus == FocusComposer) && m.messageScroll > 0:
 				m.messageScroll--
 			}
@@ -239,11 +276,27 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		return m, m.loginCmd()
 	}
 	if m.Focus == FocusNav {
-		textChannels := m.visibleTextChannels()
-		if m.selectedChannel >= 0 && m.selectedChannel < len(textChannels) {
-			m.State.SelectChannel(textChannels[m.selectedChannel].ID)
-			m.messageScroll = 0
-			m.Focus = FocusComposer
+		rows := m.visibleNavRows()
+		if m.navCursor >= 0 && m.navCursor < len(rows) {
+			row := rows[m.navCursor]
+			if row.Channel.Type == "CATEGORY" {
+				m.ensureCollapsed()
+				m.collapsed[row.Channel.ID] = !m.collapsed[row.Channel.ID]
+				if m.collapsed[row.Channel.ID] {
+					m.Status = "collapsed " + row.Channel.Name
+				} else {
+					m.Status = "expanded " + row.Channel.Name
+				}
+				m.clampNavCursor()
+				return m, nil
+			}
+			if row.Channel.Type == "TEXT" {
+				m.State.SelectChannel(row.Channel.ID)
+				m.messageScroll = 0
+				m.Focus = FocusComposer
+				m.Status = "loading #" + row.Channel.Name
+				return m, m.openChannelCmd(row.Channel.ID, row.Channel.Name)
+			}
 		}
 		return m, nil
 	}
@@ -282,10 +335,33 @@ func (m Model) handleRunes(s string) Model {
 	case m.Mode == ModeLogin && m.Focus == FocusLoginPassword:
 		m.Password += s
 	case m.Mode == ModeChat:
+		if m.Focus != FocusComposer && m.openPanelShortcut(s) {
+			return m
+		}
+		m.panel = PanelNone
 		m.Focus = FocusComposer
 		m.Input += s
 	}
 	return m
+}
+
+func (m *Model) openPanelShortcut(s string) bool {
+	switch strings.ToLower(s) {
+	case "f":
+		m.panel = PanelFriends
+		m.Status = "friends panel"
+		return true
+	case "m":
+		m.panel = PanelMembers
+		m.Status = "members panel"
+		return true
+	case ",":
+		m.panel = PanelConfig
+		m.Status = "config panel"
+		return true
+	default:
+		return false
+	}
 }
 
 func (m Model) loginCmd() tea.Cmd {
@@ -360,6 +436,22 @@ func waitForWSEvent(events <-chan wsproto.Envelope) tea.Cmd {
 	}
 }
 
+func (m Model) openChannelCmd(channelID int64, channelName string) tea.Cmd {
+	return func() tea.Msg {
+		if m.Deps.API == nil {
+			return channelLoadedMsg{ChannelID: channelID, ChannelName: channelName, Err: fmt.Errorf("API client not configured")}
+		}
+		messages, err := m.Deps.API.Messages(context.Background(), channelID, 50)
+		if err != nil {
+			return channelLoadedMsg{ChannelID: channelID, ChannelName: channelName, Err: err}
+		}
+		if len(messages) > 0 {
+			_ = m.Deps.API.MarkRead(context.Background(), channelID, messages[len(messages)-1].ID)
+		}
+		return channelLoadedMsg{ChannelID: channelID, ChannelName: channelName, Messages: messages}
+	}
+}
+
 func (m Model) sendMessageCmd(text string) tea.Cmd {
 	channelID := m.State.CurrentChannelID
 	return func() tea.Msg {
@@ -401,7 +493,6 @@ func (m Model) loginView() string {
 }
 
 func (m Model) chatView() string {
-	channels := tree.BuildVisible(m.State.Channels, m.State.Unreads)
 	width := max(24, m.width)
 	height := max(1, m.height)
 	if height == 1 {
@@ -418,33 +509,15 @@ func (m Model) chatView() string {
 	leftWidth := navWidthFor(width)
 	rightWidth := max(8, width-leftWidth-1)
 
-	left := []string{fmt.Sprintf("Hive · %d", len(m.visibleTextChannels()))}
-	selectedTextIndex := 0
-	for _, channel := range channels {
-		prefix := "  "
-		if channel.Type == "TEXT" {
-			switch {
-			case selectedTextIndex == m.selectedChannel && m.Focus == FocusNav:
-				prefix = "> "
-			case channel.ID == m.State.CurrentChannelID:
-				prefix = "› "
-			}
-			selectedTextIndex++
-		}
-		name := channel.Name
-		if channel.Type == "TEXT" {
-			name = "# " + name
-		} else {
-			name = "▾ " + name
-		}
-		if channel.Unread > 0 {
-			name = fmt.Sprintf("%s · %d", name, channel.Unread)
-		}
-		left = append(left, prefix+strings.Repeat("  ", channel.Depth)+name)
-	}
+	left := m.navLines()
 
 	right := []string{m.currentChannelHeader()}
-	right = append(right, m.visibleMessageLines(bodyHeight-1, rightWidth)...)
+	right = append(right, strings.Repeat("-", rightWidth))
+	if m.panel != PanelNone {
+		right = append(right, m.panelLines(bodyHeight-2, rightWidth)...)
+	} else {
+		right = append(right, m.visibleMessageLines(bodyHeight-2, rightWidth)...)
+	}
 
 	return renderChatColumns(left, right, bodyHeight, leftWidth, rightWidth) + "\n" +
 		m.composerLine(width) + "\n" +
@@ -454,12 +527,12 @@ func (m Model) chatView() string {
 func (m Model) currentChannelHeader() string {
 	for _, channel := range m.State.Channels {
 		if channel.ID == m.State.CurrentChannelID {
-			header := fmt.Sprintf("# %s · %d messages", channel.Name, len(m.State.Messages))
+			header := "#" + channel.Name
 			if channel.Topic != "" {
-				header = fmt.Sprintf("%s · %s", header, channel.Topic)
+				header = fmt.Sprintf("%s  %s", header, channel.Topic)
 			}
 			if m.messageScroll > 0 {
-				header = fmt.Sprintf("%s · -%d", header, m.messageScroll)
+				header = fmt.Sprintf("%s  scroll -%d", header, m.messageScroll)
 			}
 			return header
 		}
@@ -467,14 +540,111 @@ func (m Model) currentChannelHeader() string {
 	return "# channel"
 }
 
-func (m Model) visibleTextChannels() []tree.VisibleChannel {
-	var out []tree.VisibleChannel
-	for _, channel := range tree.BuildVisible(m.State.Channels, m.State.Unreads) {
-		if channel.Type == "TEXT" {
-			out = append(out, channel)
+type navRow struct {
+	Channel tree.VisibleChannel
+}
+
+func (m Model) navLines() []string {
+	rows := m.visibleNavRows()
+	lines := []string{"Hive"}
+	for i, row := range rows {
+		lines = append(lines, m.formatNavRow(i, row))
+	}
+	return lines
+}
+
+func (m Model) formatNavRow(index int, row navRow) string {
+	cursor := "  "
+	switch {
+	case m.Focus == FocusNav && index == m.navCursor:
+		cursor = "> "
+	case row.Channel.Type == "TEXT" && row.Channel.ID == m.State.CurrentChannelID:
+		cursor = "* "
+	}
+
+	indent := strings.Repeat("  ", row.Channel.Depth)
+	name := row.Channel.Name
+	switch row.Channel.Type {
+	case "CATEGORY":
+		marker := "- "
+		if m.isCollapsed(row.Channel.ID) {
+			marker = "+ "
+		}
+		name = marker + name
+	case "TEXT":
+		name = "# " + name
+	}
+	if row.Channel.Unread > 0 {
+		name = fmt.Sprintf("%s [%d]", name, row.Channel.Unread)
+	}
+	return cursor + indent + name
+}
+
+func (m Model) visibleNavRows() []navRow {
+	visible := tree.BuildVisible(m.State.Channels, m.State.Unreads)
+	byID := make(map[int64]tree.VisibleChannel, len(visible))
+	for _, channel := range visible {
+		byID[channel.ID] = channel
+	}
+
+	rows := make([]navRow, 0, len(visible))
+	for _, channel := range visible {
+		if m.hiddenByCollapsedParent(channel, byID) {
+			continue
+		}
+		rows = append(rows, navRow{Channel: channel})
+	}
+	return rows
+}
+
+func (m Model) hiddenByCollapsedParent(channel tree.VisibleChannel, byID map[int64]tree.VisibleChannel) bool {
+	parent := channel.ParentID
+	for parent != nil {
+		if m.isCollapsed(*parent) {
+			return true
+		}
+		next, ok := byID[*parent]
+		if !ok {
+			return false
+		}
+		parent = next.ParentID
+	}
+	return false
+}
+
+func (m Model) isCollapsed(channelID int64) bool {
+	return m.collapsed != nil && m.collapsed[channelID]
+}
+
+func (m *Model) ensureCollapsed() {
+	if m.collapsed == nil {
+		m.collapsed = map[int64]bool{}
+	}
+}
+
+func (m *Model) clampNavCursor() {
+	rows := m.visibleNavRows()
+	if len(rows) == 0 {
+		m.navCursor = 0
+		return
+	}
+	if m.navCursor >= len(rows) {
+		m.navCursor = len(rows) - 1
+	}
+	if m.navCursor < 0 {
+		m.navCursor = 0
+	}
+}
+
+func (m *Model) syncNavCursorToCurrent() {
+	rows := m.visibleNavRows()
+	for i, row := range rows {
+		if row.Channel.ID == m.State.CurrentChannelID {
+			m.navCursor = i
+			return
 		}
 	}
-	return out
+	m.clampNavCursor()
 }
 
 func (m Model) visibleMessageLines(height, width int) []string {
@@ -563,29 +733,26 @@ func renderChatColumns(left, right []string, height, leftWidth, rightWidth int) 
 		if i < len(right) {
 			r = right[i]
 		}
-		lines = append(lines, fitLine(l, leftWidth)+"│"+fitLine(r, rightWidth))
+		lines = append(lines, fitLine(l, leftWidth)+" "+fitLine(r, rightWidth))
 	}
 	return strings.Join(lines, "\n")
 }
 
 func formatMessage(message model.Message, width int) []string {
-	authorWidth := min(12, max(6, width/4))
-	separator := " │ "
-	contentWidth := max(4, width-authorWidth-cellWidth(separator))
+	metaWidth := max(8, width)
 	author := message.SenderNickname
 	if author == "" {
 		author = "system"
 	}
+	meta := fmt.Sprintf("%s  %s", author, formatMessageTime(message.CreatedAt))
 	content := displayContent(message)
+	contentWidth := max(4, width-2)
 	wrapped := wrapCells(content, contentWidth)
-	lines := make([]string, 0, len(wrapped))
-	for i, line := range wrapped {
-		name := ""
-		if i == 0 {
-			name = author
-		}
-		lines = append(lines, fitLine(name, authorWidth)+separator+fitLine(line, contentWidth))
+	lines := []string{fitLine(meta, metaWidth)}
+	for _, line := range wrapped {
+		lines = append(lines, fitLine("  "+line, width))
 	}
+	lines = append(lines, "")
 	return lines
 }
 
@@ -594,10 +761,29 @@ func displayContent(message model.Message) string {
 	if content == "" {
 		return ""
 	}
-	if message.Type == "IMAGE" || strings.HasPrefix(content, "/uploads/") {
-		return "[图片] " + content
-	}
 	return content
+}
+
+func formatMessageTime(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return "刚刚"
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04:05.000000",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed.Format("01-02 15:04")
+		}
+	}
+	if len(raw) >= len("2006-01-02T15:04") {
+		return strings.ReplaceAll(raw[5:16], "T", " ")
+	}
+	return "--:--"
 }
 
 func wrapCells(s string, width int) []string {
@@ -628,8 +814,32 @@ func wrapCells(s string, width int) []string {
 	return lines
 }
 
+func (m Model) panelLines(height, width int) []string {
+	title := ""
+	switch m.panel {
+	case PanelFriends:
+		title = "Friends"
+	case PanelMembers:
+		title = "Members"
+	case PanelConfig:
+		title = "Config"
+	default:
+		return nil
+	}
+	lines := []string{
+		"",
+		title,
+		"接口未接入",
+		"Esc close",
+	}
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	return lines[:height]
+}
+
 func (m Model) composerLine(width int) string {
-	prompt := "›"
+	prompt := ">"
 	if m.Focus == FocusNav {
 		prompt = " "
 	}
@@ -637,7 +847,7 @@ func (m Model) composerLine(width int) string {
 }
 
 func (m Model) statusLine(width int) string {
-	parts := []string{connectionStatus(m.Status), focusName(m.Focus), "↑/↓ move/scroll", "←/→ focus", "Enter select/send"}
+	parts := []string{connectionStatus(m.Status), strings.ToUpper(focusName(m.Focus)), "F friends", "M members", ", config", "Enter"}
 	if m.messageScroll > 0 {
 		parts = append(parts, fmt.Sprintf("scroll -%d", m.messageScroll))
 	}

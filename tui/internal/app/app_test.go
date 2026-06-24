@@ -128,8 +128,144 @@ func TestChatViewMarksCurrentChannelOutsideNavFocus(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 	view := updated.(app.Model).View()
 
-	if !strings.Contains(view, "› # general") {
+	if !strings.Contains(view, "* # general") {
 		t.Fatalf("current channel should stay marked outside nav focus:\n%s", view)
+	}
+}
+
+func TestNavShowsFirstChannelAndTogglesCategory(t *testing.T) {
+	parent := int64(1)
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusNav
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels: []model.Channel{
+			{ID: 1, Type: "CATEGORY", Name: "General", Position: 1},
+			{ID: 2, ParentID: &parent, Type: "TEXT", Name: "Lobby", Position: 1},
+		},
+		Unreads: map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	view := updated.(app.Model).View()
+	if !strings.Contains(view, "- General") || !strings.Contains(view, "# Lobby") {
+		t.Fatalf("expanded nav missing first channel:\n%s", view)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	collapsed := updated.(app.Model).View()
+	if !strings.Contains(collapsed, "+ General") || strings.Contains(collapsed, "# Lobby") {
+		t.Fatalf("collapsed nav should hide child channel:\n%s", collapsed)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	expanded := updated.(app.Model).View()
+	if !strings.Contains(expanded, "- General") || !strings.Contains(expanded, "# Lobby") {
+		t.Fatalf("expanded nav should restore child channel:\n%s", expanded)
+	}
+}
+
+func TestSelectingChannelLoadsHistory(t *testing.T) {
+	api := &fakeAPI{
+		messagesByChannel: map[int64][]model.Message{
+			3: {{ID: 31, ChannelID: 3, SenderNickname: "zkw", Content: "random", CreatedAt: "2026-06-14T15:01:00"}},
+		},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusNav
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels: []model.Channel{
+			{ID: 2, Type: "TEXT", Name: "Lobby", Position: 1},
+			{ID: 3, Type: "TEXT", Name: "Random", Position: 2},
+		},
+		Messages: []model.Message{{ID: 21, ChannelID: 2, SenderNickname: "nivek", Content: "old"}},
+		Unreads:  map[int64]int{3: 4},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected channel history command")
+	}
+	updated, _ = updated.Update(cmd())
+	next := updated.(app.Model)
+
+	if next.State.CurrentChannelID != 3 || len(next.State.Messages) != 1 || next.State.Messages[0].Content != "random" {
+		t.Fatalf("state after channel load = %#v", next.State)
+	}
+	if len(api.readMessageIDs) != 1 || api.readMessageIDs[0] != 31 {
+		t.Fatalf("read ids = %#v", api.readMessageIDs)
+	}
+	if !strings.Contains(next.View(), "opened #Random") {
+		t.Fatalf("expected open feedback:\n%s", next.View())
+	}
+}
+
+func TestMessagesRenderAsPrimaryChatStreamWithTime(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby", Topic: "Anything goes"}},
+		Messages: []model.Message{
+			{ID: 1, ChannelID: 2, SenderNickname: "nivek", Content: "/uploads/a.jpg", CreatedAt: "2026-06-14T14:14:00"},
+			{ID: 2, ChannelID: 2, SenderNickname: "zkw", Content: "hello", CreatedAt: "2026-06-14T15:01:00"},
+		},
+		Unreads: map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 88, Height: 14})
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "#Lobby  Anything goes") {
+		t.Fatalf("expected focused channel header:\n%s", view)
+	}
+	if !strings.Contains(view, "nivek") || !strings.Contains(view, "06-14 14:14") || !strings.Contains(view, "  /uploads/a.jpg") {
+		t.Fatalf("expected primary message block with time:\n%s", view)
+	}
+	if strings.Contains(view, "nivek       |") {
+		t.Fatalf("old single-line message format should be gone:\n%s", view)
+	}
+}
+
+func TestPlaceholderPanelsOpenAndClose(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	friends := updated.(app.Model).View()
+	if !strings.Contains(friends, "Friends") || !strings.Contains(friends, "接口未接入") {
+		t.Fatalf("expected friends placeholder:\n%s", friends)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	closed := updated.(app.Model).View()
+	if strings.Contains(closed, "接口未接入") {
+		t.Fatalf("panel should close on Esc:\n%s", closed)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	members := updated.(app.Model).View()
+	if !strings.Contains(members, "Members") || !strings.Contains(members, "接口未接入") {
+		t.Fatalf("expected members placeholder:\n%s", members)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(",")})
+	config := updated.(app.Model).View()
+	if !strings.Contains(config, "Config") || !strings.Contains(config, "接口未接入") {
+		t.Fatalf("expected config placeholder:\n%s", config)
 	}
 }
 
@@ -261,7 +397,8 @@ func TestLoginCommandConnectsWebSocketAndConsumesEvents(t *testing.T) {
 }
 
 type fakeAPI struct {
-	readMessageIDs []int64
+	readMessageIDs    []int64
+	messagesByChannel map[int64][]model.Message
 }
 
 func (f *fakeAPI) Login(context.Context, string, string) (model.LoginResp, error) {
@@ -284,7 +421,12 @@ func (f *fakeAPI) HiveDetail(context.Context, int64) (model.HiveDetail, error) {
 	}, nil
 }
 
-func (f *fakeAPI) Messages(context.Context, int64, int) ([]model.Message, error) {
+func (f *fakeAPI) Messages(_ context.Context, channelID int64, _ int) ([]model.Message, error) {
+	if f.messagesByChannel != nil {
+		if messages, ok := f.messagesByChannel[channelID]; ok {
+			return append([]model.Message(nil), messages...), nil
+		}
+	}
 	return []model.Message{{ID: 10, ChannelID: 2, Content: "hello"}}, nil
 }
 

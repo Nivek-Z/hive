@@ -8,6 +8,7 @@ import (
 
 type VisibleChannel struct {
 	ID       int64
+	ParentID *int64
 	Type     string
 	Name     string
 	Depth    int
@@ -43,6 +44,7 @@ func BuildVisible(channels []model.Channel, unreads map[int64]int) []VisibleChan
 		for _, channel := range byParent[parent] {
 			visible = append(visible, VisibleChannel{
 				ID:       channel.ID,
+				ParentID: channel.ParentID,
 				Type:     channel.Type,
 				Name:     channel.Name,
 				Depth:    depth,
