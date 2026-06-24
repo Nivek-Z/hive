@@ -61,7 +61,9 @@ type menuAction int
 const (
 	menuActionSend menuAction = iota
 	menuActionFriends
+	menuActionDMs
 	menuActionMembers
+	menuActionRoles
 	menuActionConfig
 	menuActionJumpLatest
 	menuActionNavOpen
@@ -76,6 +78,22 @@ type menuItem struct {
 	Label  string
 	Hint   string
 	Action menuAction
+}
+
+type panelActionKind int
+
+const (
+	panelActionOpenDM panelActionKind = iota
+	panelActionOpenDMChannel
+	panelActionAcceptRequest
+)
+
+type panelAction struct {
+	Label string
+	Hint  string
+	Kind  panelActionKind
+	ID    int64
+	Name  string
 }
 
 type Dependencies struct {
@@ -122,6 +140,8 @@ type Model struct {
 	menuCursor     int
 	panelTitle     string
 	panelDataLines []string
+	panelCursor    int
+	panelActions   []panelAction
 }
 
 type incomingMessageMsg struct {
@@ -144,6 +164,7 @@ type commandResultMsg struct {
 	ChannelID   int64
 	ChannelName string
 	Messages    []model.Message
+	Actions     []panelAction
 }
 
 type channelLoadedMsg struct {
@@ -222,6 +243,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.panel = PanelCommand
 			m.panelTitle = msg.Title
 			m.panelDataLines = append([]string(nil), msg.Lines...)
+			m.panelActions = append([]panelAction(nil), msg.Actions...)
+			m.panelCursor = 0
 		}
 		if msg.Status != "" {
 			m.Status = msg.Status
@@ -335,6 +358,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.Mode == ModeChat {
 			if m.panel != PanelNone {
 				m.panel = PanelNone
+				m.panelActions = nil
+				m.panelCursor = 0
 				m.Status = "panel closed"
 				return m, nil
 			}
@@ -362,6 +387,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveMenuCursor(-1)
 			return m, nil
 		}
+		if m.Mode == ModeChat && m.panel != PanelNone && len(m.panelActions) > 0 {
+			m.movePanelCursor(-1)
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			switch {
 			case m.Focus == FocusNav && m.navCursor > 0:
@@ -378,6 +407,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveMenuCursor(1)
 			return m, nil
 		}
+		if m.Mode == ModeChat && m.panel != PanelNone && len(m.panelActions) > 0 {
+			m.movePanelCursor(1)
+			return m, nil
+		}
 		if m.Mode == ModeChat {
 			switch {
 			case m.Focus == FocusNav && m.navCursor < len(m.visibleNavRows())-1:
@@ -390,6 +423,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnter:
 		if m.menuOpen {
 			return m.executeMenuSelection()
+		}
+		if m.Mode == ModeChat && m.panel != PanelNone && len(m.panelActions) > 0 {
+			return m.executePanelAction()
 		}
 		return m.handleEnter()
 	case tea.KeyBackspace:
@@ -508,14 +544,25 @@ func (m *Model) openPanelShortcut(s string) (bool, tea.Cmd) {
 	switch strings.ToLower(s) {
 	case "f":
 		m.panel = PanelFriends
+		m.clearPanelActions()
 		m.Status = "loading friends"
 		return true, m.loadFriendsCmd()
+	case "d":
+		m.panel = PanelCommand
+		m.Status = "loading dms"
+		return true, m.loadDMsCmd()
+	case "r":
+		m.panel = PanelCommand
+		m.Status = "loading roles"
+		return true, m.loadRolesCmd()
 	case "m":
 		m.panel = PanelMembers
+		m.clearPanelActions()
 		m.Status = "loading members"
 		return true, m.loadMembersCmd()
 	case ",":
 		m.panel = PanelConfig
+		m.clearPanelActions()
 		m.Status = "config panel"
 		return true, nil
 	default:
@@ -535,6 +582,51 @@ func (m *Model) moveMenuCursor(delta int) {
 	}
 	if m.menuCursor >= len(items) {
 		m.menuCursor = len(items) - 1
+	}
+}
+
+func (m *Model) movePanelCursor(delta int) {
+	if len(m.panelActions) == 0 {
+		m.panelCursor = 0
+		return
+	}
+	m.panelCursor += delta
+	if m.panelCursor < 0 {
+		m.panelCursor = 0
+	}
+	if m.panelCursor >= len(m.panelActions) {
+		m.panelCursor = len(m.panelActions) - 1
+	}
+}
+
+func (m *Model) clearPanelActions() {
+	m.panelActions = nil
+	m.panelCursor = 0
+}
+
+func (m Model) executePanelAction() (tea.Model, tea.Cmd) {
+	if len(m.panelActions) == 0 {
+		return m, nil
+	}
+	if m.panelCursor < 0 {
+		m.panelCursor = 0
+	}
+	if m.panelCursor >= len(m.panelActions) {
+		m.panelCursor = len(m.panelActions) - 1
+	}
+	action := m.panelActions[m.panelCursor]
+	switch action.Kind {
+	case panelActionOpenDM:
+		m.Status = "opening " + action.Name
+		return m, m.openDMCmd(action.ID, action.Name)
+	case panelActionOpenDMChannel:
+		m.Status = "opening " + action.Name
+		return m, m.openDMChannelCmd(action.ID, action.Name)
+	case panelActionAcceptRequest:
+		m.Status = "accepting request"
+		return m, m.acceptFriendRequestCmd(action.ID)
+	default:
+		return m, nil
 	}
 }
 
@@ -566,15 +658,26 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		return m, m.sendMessageCmd(text)
 	case menuActionFriends:
 		m.panel = PanelFriends
+		m.clearPanelActions()
 		m.Status = "loading friends"
 		return m, m.loadFriendsCmd()
+	case menuActionDMs:
+		m.panel = PanelCommand
+		m.Status = "loading dms"
+		return m, m.loadDMsCmd()
 	case menuActionMembers:
 		m.panel = PanelMembers
+		m.clearPanelActions()
 		m.Status = "loading members"
 		return m, m.loadMembersCmd()
+	case menuActionRoles:
+		m.panel = PanelCommand
+		m.Status = "loading roles"
+		return m, m.loadRolesCmd()
 	case menuActionConfig:
 		if m.Mode == ModeChat {
 			m.panel = PanelConfig
+			m.clearPanelActions()
 			m.Status = "config panel"
 		} else {
 			m.Status = "server " + m.Deps.Config.RawHost
@@ -626,7 +729,9 @@ func (m Model) menuItems() []menuItem {
 		return []menuItem{
 			{Label: "跳到最新", Hint: "End", Action: menuActionJumpLatest},
 			{Label: "成员列表", Hint: "M", Action: menuActionMembers},
+			{Label: "角色权限", Hint: "R", Action: menuActionRoles},
 			{Label: "好友", Hint: "F", Action: menuActionFriends},
+			{Label: "私聊", Hint: "D", Action: menuActionDMs},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
 		}
 	default:
@@ -635,6 +740,8 @@ func (m Model) menuItems() []menuItem {
 			{Label: "切换群聊", Hint: "hives", Action: menuActionSwitchHive},
 			{Label: "好友", Hint: "F", Action: menuActionFriends},
 			{Label: "在线成员", Hint: "M", Action: menuActionMembers},
+			{Label: "私聊", Hint: "D", Action: menuActionDMs},
+			{Label: "角色权限", Hint: "R", Action: menuActionRoles},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
 		}
 	}
@@ -1475,6 +1582,29 @@ func (m Model) panelContentLines(height, width int) []string {
 		}
 		lines = []string{"", accentStyle.Render(title)}
 		lines = append(lines, m.panelDataLines...)
+		if len(m.panelActions) > 0 {
+			contentWidth := max(4, width-2)
+			for i, action := range m.panelActions {
+				prefix := "  "
+				selected := false
+				if i == m.panelCursor {
+					prefix = "> "
+					selected = true
+				}
+				line := prefix + action.Label
+				if action.Hint != "" {
+					gap := max(1, contentWidth-cellWidth(line)-cellWidth(action.Hint))
+					line += strings.Repeat(" ", gap) + action.Hint
+				}
+				line = fitLine(line, contentWidth)
+				if selected {
+					line = accentStyle.Render(line)
+				} else {
+					line = primaryStyle.Render(line)
+				}
+				lines = append(lines, line)
+			}
+		}
 		lines = append(lines, "", mutedStyle.Render("Esc close"))
 	default:
 		return nil
@@ -1536,6 +1666,8 @@ func (m Model) composerLine(width int) string {
 func (m Model) statusLine(width int) string {
 	parts := []string{styleConnectionStatus(m.Status), accentStyle.Render(strings.ToUpper(focusName(m.Focus)))}
 	if m.menuOpen {
+		parts = append(parts, mutedStyle.Render("Up/Down choose"), mutedStyle.Render("Enter select"), mutedStyle.Render("Esc close"))
+	} else if m.panel != PanelNone && len(m.panelActions) > 0 {
 		parts = append(parts, mutedStyle.Render("Up/Down choose"), mutedStyle.Render("Enter select"), mutedStyle.Render("Esc close"))
 	} else {
 		parts = append(parts, mutedStyle.Render("Tab menu"), mutedStyle.Render("Enter"))

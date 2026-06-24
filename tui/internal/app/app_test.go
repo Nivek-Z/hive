@@ -635,6 +635,148 @@ func TestSlashCommandsCallBackendAPIs(t *testing.T) {
 	}
 }
 
+func TestPermissionsHelpAndRoleCommandUseNamedPermissions(t *testing.T) {
+	api := &fullFakeAPI{fakeAPI: fakeAPI{}}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	m.Input = "/permissions"
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected permissions command")
+	}
+	updated, _ = updated.Update(cmd())
+	view := updated.(app.Model).View()
+	for _, want := range []string{"SEND_MESSAGES", "ATTACH_FILES", "default_member"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in permissions panel:\n%s", want, view)
+		}
+	}
+
+	next := updated.(app.Model)
+	next.Input = "/role create mod|#ffb300|send_messages,attach_files,add_reactions"
+	updated, cmd = next.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected role command")
+	}
+	updated, _ = updated.Update(cmd())
+	if !contains(api.calls, "role:create:1:mod:3584") {
+		t.Fatalf("expected named permission bits in role create call, got %#v", api.calls)
+	}
+}
+
+func TestRolesPanelShowsNamedPermissions(t *testing.T) {
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{},
+		roles:   []model.Role{{ID: 5, Name: "writer", Color: "#ffb300", Permissions: 1536}},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+	m.Input = "/roles"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected roles command")
+	}
+	updated, _ = updated.Update(cmd())
+	view := updated.(app.Model).View()
+
+	for _, want := range []string{"writer", "SEND_MESSAGES", "ATTACH_FILES"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in roles panel:\n%s", want, view)
+		}
+	}
+}
+
+func TestFriendsPanelEnterOpensSelectedDM(t *testing.T) {
+	api := &fullFakeAPI{
+		fakeAPI:  fakeAPI{},
+		friends:  []model.Friend{{UserID: 8, Username: "zkw", Nickname: "zkw"}},
+		requests: []model.FriendRequest{},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	if cmd == nil {
+		t.Fatal("expected friends loading command")
+	}
+	updated, _ = updated.Update(cmd())
+	friendsView := updated.(app.Model).View()
+	if !strings.Contains(friendsView, "Enter open DM") {
+		t.Fatalf("expected actionable friends panel:\n%s", friendsView)
+	}
+
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected open dm command")
+	}
+	updated, _ = updated.Update(cmd())
+	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "#dm-zkw") || !contains(api.calls, "dm:open:8") {
+		t.Fatalf("expected selected friend to open DM:\n%s\ncalls=%#v", view, api.calls)
+	}
+}
+
+func TestDMSPanelShortcutOpensSelectedConversation(t *testing.T) {
+	api := &fullFakeAPI{fakeAPI: fakeAPI{}}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if cmd == nil {
+		t.Fatal("expected dms loading command")
+	}
+	updated, _ = updated.Update(cmd())
+	dmsView := updated.(app.Model).View()
+	if !strings.Contains(dmsView, "DMs") || !strings.Contains(dmsView, "Enter open") {
+		t.Fatalf("expected actionable DMs panel:\n%s", dmsView)
+	}
+
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected open dm channel command")
+	}
+	updated, _ = updated.Update(cmd())
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "#dm-zkw") || !contains(api.calls, "messages:44:50") {
+		t.Fatalf("expected selected dm to open conversation:\n%s\ncalls=%#v", view, api.calls)
+	}
+}
+
 func TestDMCommandAddsSyntheticChannelHeader(t *testing.T) {
 	api := &fullFakeAPI{fakeAPI: fakeAPI{}}
 	m := app.NewModel(app.Dependencies{API: api})
@@ -1018,9 +1160,11 @@ func (f *fakeAPI) MarkRead(_ context.Context, _ int64, messageID int64) error {
 
 type fullFakeAPI struct {
 	fakeAPI
-	friends []model.Friend
-	members []model.Member
-	calls   []string
+	friends  []model.Friend
+	requests []model.FriendRequest
+	members  []model.Member
+	roles    []model.Role
+	calls    []string
 }
 
 func (f *fullFakeAPI) Register(_ context.Context, username, _ string, nickname string) (model.LoginResp, error) {
@@ -1153,6 +1297,9 @@ func (f *fullFakeAPI) SendFriendRequest(_ context.Context, username string) erro
 }
 
 func (f *fullFakeAPI) FriendRequests(context.Context) ([]model.FriendRequest, error) {
+	if f.requests != nil {
+		return append([]model.FriendRequest(nil), f.requests...), nil
+	}
 	return []model.FriendRequest{{ID: 31, UserID: 8, Username: "zkw", Nickname: "zkw"}}, nil
 }
 
@@ -1183,11 +1330,14 @@ func (f *fullFakeAPI) DMs(context.Context) ([]model.DM, error) {
 
 func (f *fullFakeAPI) Roles(_ context.Context, hiveID int64) ([]model.Role, error) {
 	f.calls = append(f.calls, fmt.Sprintf("roles:%d", hiveID))
+	if f.roles != nil {
+		return append([]model.Role(nil), f.roles...), nil
+	}
 	return []model.Role{{ID: 5, Name: "admin", Color: "#ffb300", Permissions: 7}}, nil
 }
 
 func (f *fullFakeAPI) CreateRole(_ context.Context, hiveID int64, req model.RoleReq) (model.Role, error) {
-	f.calls = append(f.calls, fmt.Sprintf("role:create:%d:%s", hiveID, req.Name))
+	f.calls = append(f.calls, fmt.Sprintf("role:create:%d:%s:%d", hiveID, req.Name, req.Permissions))
 	return model.Role{ID: 6, Name: req.Name, Color: req.Color, Permissions: req.Permissions}, nil
 }
 

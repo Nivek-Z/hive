@@ -89,16 +89,31 @@ func (m Model) loadFriendsCmd() tea.Cmd {
 		}
 		requests, _ := api.FriendRequests(context.Background())
 		lines := []string{mutedStyle.Render(fmt.Sprintf("friends %d | requests %d", len(friends), len(requests)))}
+		actions := make([]panelAction, 0, len(requests)+len(friends))
 		for _, request := range requests {
-			lines = append(lines, fmt.Sprintf("request #%d  %s  @%s", request.ID, displayName(request.Nickname, request.Username), request.Username))
+			name := displayName(request.Nickname, request.Username)
+			actions = append(actions, panelAction{
+				Label: fmt.Sprintf("request #%d  %s  @%s", request.ID, name, request.Username),
+				Hint:  "Enter accept",
+				Kind:  panelActionAcceptRequest,
+				ID:    request.ID,
+				Name:  name,
+			})
 		}
 		for _, friend := range friends {
-			lines = append(lines, fmt.Sprintf("#%d  %s  @%s", friend.UserID, displayName(friend.Nickname, friend.Username), friend.Username))
+			name := displayName(friend.Nickname, friend.Username)
+			actions = append(actions, panelAction{
+				Label: fmt.Sprintf("#%d  %s  @%s", friend.UserID, name, friend.Username),
+				Hint:  "Enter open DM",
+				Kind:  panelActionOpenDM,
+				ID:    friend.UserID,
+				Name:  "dm-" + name,
+			})
 		}
-		if len(lines) == 1 {
+		if len(actions) == 0 {
 			lines = append(lines, mutedStyle.Render("No friends yet. Use /friend add <username>."))
 		}
-		return commandResultMsg{Title: "Friends", Lines: lines, Status: "friends loaded"}
+		return commandResultMsg{Title: "Friends", Lines: lines, Actions: actions, Status: "friends loaded"}
 	}
 }
 
@@ -128,6 +143,26 @@ func (m Model) loadMembersCmd() tea.Cmd {
 			lines = append(lines, fmt.Sprintf("#%d  %s  @%s%s", member.UserID, displayName(member.Nickname, member.Username), member.Username, flag))
 		}
 		return commandResultMsg{Title: "Members", Lines: lines, Status: "members loaded"}
+	}
+}
+
+func (m Model) loadDMsCmd() tea.Cmd {
+	return func() tea.Msg {
+		api, err := m.commandAPI()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		return m.dmsResult(api)
+	}
+}
+
+func (m Model) loadRolesCmd() tea.Cmd {
+	return func() tea.Msg {
+		api, err := m.commandAPI()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		return m.rolesResult(api)
 	}
 }
 
@@ -181,6 +216,8 @@ func (m Model) commandCmd(input string) tea.Cmd {
 				}
 				return commandResultMsg{Title: "User", Lines: userLines(user), Status: "user loaded"}
 			})
+		case "permissions":
+			return commandResultMsg{Title: "Permissions", Lines: permissionHelpLines(), Status: "permissions"}
 		case "hive":
 			return m.hiveCommand(api, rest)
 		case "members":
@@ -650,15 +687,7 @@ func (m Model) friendCommand(api commandAPI, cmd, rest string) commandResultMsg 
 func (m Model) dmCommand(api commandAPI, cmd, rest string) commandResultMsg {
 	return runWithAPI(api, func(api commandAPI) commandResultMsg {
 		if cmd == "dms" {
-			dms, err := api.DMs(context.Background())
-			if err != nil {
-				return commandResultMsg{Err: err}
-			}
-			lines := make([]string, 0, len(dms))
-			for _, dm := range dms {
-				lines = append(lines, fmt.Sprintf("channel #%d  %s  unread %d  %s", dm.ChannelID, displayName(dm.Nickname, dm.Username), dm.Unread, dm.LastContent))
-			}
-			return commandResultMsg{Title: "DMs", Lines: nonEmpty(lines), Status: "dms loaded"}
+			return m.dmsResult(api)
 		}
 		sub, rest := splitCommand(rest)
 		if sub != "open" {
@@ -672,12 +701,81 @@ func (m Model) dmCommand(api commandAPI, cmd, rest string) commandResultMsg {
 		if err != nil {
 			return commandResultMsg{Err: err}
 		}
-		messages, err := api.MessagesBefore(context.Background(), resp.ChannelID, 0, 50)
+		return m.openDMChannelResult(api, resp.ChannelID, "dm")
+	})
+}
+
+func (m Model) dmsResult(api commandAPI) commandResultMsg {
+	dms, err := api.DMs(context.Background())
+	if err != nil {
+		return commandResultMsg{Err: err}
+	}
+	lines := []string{mutedStyle.Render(fmt.Sprintf("conversations %d", len(dms)))}
+	actions := make([]panelAction, 0, len(dms))
+	for _, dm := range dms {
+		name := "dm-" + displayName(dm.Nickname, dm.Username)
+		actions = append(actions, panelAction{
+			Label: fmt.Sprintf("channel #%d  %s  unread %d  %s", dm.ChannelID, displayName(dm.Nickname, dm.Username), dm.Unread, emptyDash(dm.LastContent)),
+			Hint:  "Enter open",
+			Kind:  panelActionOpenDMChannel,
+			ID:    dm.ChannelID,
+			Name:  name,
+		})
+	}
+	if len(actions) == 0 {
+		lines = append(lines, mutedStyle.Render("No DMs yet. Open one from Friends."))
+	}
+	return commandResultMsg{Title: "DMs", Lines: lines, Actions: actions, Status: "dms loaded"}
+}
+
+func (m Model) openDMCmd(userID int64, name string) tea.Cmd {
+	return func() tea.Msg {
+		api, err := m.commandAPI()
 		if err != nil {
 			return commandResultMsg{Err: err}
 		}
-		return commandResultMsg{SetChannel: true, ChannelID: resp.ChannelID, ChannelName: "dm", Messages: messages, Status: fmt.Sprintf("opened dm #%d", resp.ChannelID)}
-	})
+		resp, err := api.OpenDM(context.Background(), userID)
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		return m.openDMChannelResult(api, resp.ChannelID, name)
+	}
+}
+
+func (m Model) openDMChannelCmd(channelID int64, name string) tea.Cmd {
+	return func() tea.Msg {
+		api, err := m.commandAPI()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		return m.openDMChannelResult(api, channelID, name)
+	}
+}
+
+func (m Model) openDMChannelResult(api commandAPI, channelID int64, name string) commandResultMsg {
+	if strings.TrimSpace(name) == "" {
+		name = "dm"
+	}
+	messages, err := api.MessagesBefore(context.Background(), channelID, 0, 50)
+	if err != nil {
+		return commandResultMsg{Err: err}
+	}
+	return commandResultMsg{SetChannel: true, ChannelID: channelID, ChannelName: name, Messages: messages, Status: fmt.Sprintf("opened %s", name)}
+}
+
+func (m Model) acceptFriendRequestCmd(requestID int64) tea.Cmd {
+	return func() tea.Msg {
+		api, err := m.commandAPI()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		if err := api.AcceptFriendRequest(context.Background(), requestID); err != nil {
+			return commandResultMsg{Err: err}
+		}
+		result := m.dmsResult(api)
+		result.Status = "request accepted"
+		return result
+	}
 }
 
 func (m Model) roleCommand(api commandAPI, cmd, rest string) commandResultMsg {
@@ -687,15 +785,7 @@ func (m Model) roleCommand(api commandAPI, cmd, rest string) commandResultMsg {
 			return commandResultMsg{Err: err}
 		}
 		if cmd == "roles" {
-			roles, err := api.Roles(context.Background(), hiveID)
-			if err != nil {
-				return commandResultMsg{Err: err}
-			}
-			lines := make([]string, 0, len(roles))
-			for _, role := range roles {
-				lines = append(lines, fmt.Sprintf("#%d  %s  %s  perm=%d", role.ID, role.Name, role.Color, role.Permissions))
-			}
-			return commandResultMsg{Title: "Roles", Lines: nonEmpty(lines), Status: "roles loaded"}
+			return m.rolesResult(api)
 		}
 		sub, rest := splitCommand(rest)
 		switch sub {
@@ -740,6 +830,22 @@ func (m Model) roleCommand(api commandAPI, cmd, rest string) commandResultMsg {
 			return usage("/roles | /role create|update|delete")
 		}
 	})
+}
+
+func (m Model) rolesResult(api commandAPI) commandResultMsg {
+	hiveID, err := m.requireHive()
+	if err != nil {
+		return commandResultMsg{Err: err}
+	}
+	roles, err := api.Roles(context.Background(), hiveID)
+	if err != nil {
+		return commandResultMsg{Err: err}
+	}
+	lines := []string{mutedStyle.Render("use /permissions for names and presets")}
+	for _, role := range roles {
+		lines = append(lines, fmt.Sprintf("#%d  %s  %s  %s", role.ID, role.Name, role.Color, formatPermissions(role.Permissions)))
+	}
+	return commandResultMsg{Title: "Roles", Lines: nonEmpty(lines), Status: "roles loaded"}
 }
 
 func (m Model) uploadCommand(api commandAPI, rest string) commandResultMsg {
@@ -827,7 +933,8 @@ func commandHelpLines() []string {
 		"friends: /friends /friend add remove",
 		"requests: /requests /request accept decline",
 		"dm: /dms /dm open",
-		"roles: /roles /role create update delete",
+		"roles: /permissions /roles",
+		"roles: /role create update delete with permission names",
 		"files: /upload <imagePath>",
 		"extras: /achievements /heatmap /search /stats",
 		"ws: /typing /ping /konami",
@@ -908,7 +1015,7 @@ func parseRoleReq(raw, usageLine string) (model.RoleReq, error) {
 	if len(parts) != 3 {
 		return model.RoleReq{}, fmt.Errorf("usage: %s", usageLine)
 	}
-	permissions, err := strconv.ParseInt(parts[2], 10, 64)
+	permissions, err := parsePermissions(parts[2])
 	if err != nil {
 		return model.RoleReq{}, err
 	}
