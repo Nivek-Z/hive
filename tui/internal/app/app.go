@@ -514,7 +514,7 @@ func (m Model) chatView() string {
 	right := []string{m.currentChannelHeader()}
 	right = append(right, strings.Repeat("-", rightWidth))
 	if m.panel != PanelNone {
-		right = append(right, m.panelLines(bodyHeight-2, rightWidth)...)
+		right = append(right, m.panelContentLines(bodyHeight-2, rightWidth)...)
 	} else {
 		right = append(right, m.visibleMessageLines(bodyHeight-2, rightWidth)...)
 	}
@@ -525,19 +525,33 @@ func (m Model) chatView() string {
 }
 
 func (m Model) currentChannelHeader() string {
-	for _, channel := range m.State.Channels {
-		if channel.ID == m.State.CurrentChannelID {
-			header := "#" + channel.Name
-			if channel.Topic != "" {
-				header = fmt.Sprintf("%s  %s", header, channel.Topic)
-			}
-			if m.messageScroll > 0 {
-				header = fmt.Sprintf("%s  scroll -%d", header, m.messageScroll)
-			}
-			return header
+	if channel, ok := m.currentChannel(); ok {
+		header := "#" + channel.Name
+		if channel.Topic != "" {
+			header = fmt.Sprintf("%s  %s", header, channel.Topic)
 		}
+		if m.messageScroll > 0 {
+			header = fmt.Sprintf("%s  scroll -%d", header, m.messageScroll)
+		}
+		return header
 	}
 	return "# channel"
+}
+
+func (m Model) currentChannel() (model.Channel, bool) {
+	for _, channel := range m.State.Channels {
+		if channel.ID == m.State.CurrentChannelID {
+			return channel, true
+		}
+	}
+	return model.Channel{}, false
+}
+
+func (m Model) currentChannelName() string {
+	if channel, ok := m.currentChannel(); ok && strings.TrimSpace(channel.Name) != "" {
+		return channel.Name
+	}
+	return "channel"
 }
 
 type navRow struct {
@@ -747,13 +761,57 @@ func formatMessage(message model.Message, width int) []string {
 	meta := fmt.Sprintf("%s  %s", author, formatMessageTime(message.CreatedAt))
 	content := displayContent(message)
 	contentWidth := max(4, width-2)
-	wrapped := wrapCells(content, contentWidth)
 	lines := []string{fitLine(meta, metaWidth)}
-	for _, line := range wrapped {
+
+	if reply := displayReply(message); reply != "" {
+		for _, line := range wrapCells("> "+reply, contentWidth) {
+			lines = append(lines, fitLine("  "+line, width))
+		}
+	}
+
+	for _, line := range wrapCells(content, contentWidth) {
 		lines = append(lines, fitLine("  "+line, width))
 	}
+
+	if reactions := displayReactions(message.Reactions); reactions != "" {
+		for _, line := range wrapCells("reactions: "+reactions, contentWidth) {
+			lines = append(lines, fitLine("  "+line, width))
+		}
+	}
+
 	lines = append(lines, "")
 	return lines
+}
+
+func displayReply(message model.Message) string {
+	content := strings.TrimSpace(message.ReplyContent)
+	name := strings.TrimSpace(message.ReplySenderName)
+	switch {
+	case content == "" && name == "":
+		return ""
+	case name == "":
+		return content
+	case content == "":
+		return name
+	default:
+		return name + ": " + content
+	}
+}
+
+func displayReactions(reactions []model.Reaction) string {
+	parts := make([]string, 0, len(reactions))
+	for _, reaction := range reactions {
+		emoji := strings.TrimSpace(reaction.Emoji)
+		if emoji == "" || reaction.Count <= 0 {
+			continue
+		}
+		if reaction.Count == 1 {
+			parts = append(parts, emoji)
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", emoji, reaction.Count))
+	}
+	return strings.Join(parts, "  ")
 }
 
 func displayContent(message model.Message) string {
@@ -838,12 +896,54 @@ func (m Model) panelLines(height, width int) []string {
 	return lines[:height]
 }
 
+func (m Model) panelContentLines(height, width int) []string {
+	var lines []string
+	switch m.panel {
+	case PanelFriends:
+		lines = []string{
+			"",
+			"Friends 好友",
+			"接口未接入",
+			"等待后端提供好友接口",
+			"Esc close",
+		}
+	case PanelMembers:
+		lines = []string{
+			"",
+			"Members 在线成员",
+			"接口未接入",
+			"等待后端提供在线成员接口",
+			"Esc close",
+		}
+	case PanelConfig:
+		lines = []string{
+			"",
+			"Config 设置",
+			fmt.Sprintf("server_url  %s", m.Deps.Config.RawHost),
+			fmt.Sprintf("REST        %s", m.Deps.Config.RESTBase),
+			fmt.Sprintf("WS          %s", m.Deps.Config.WSBase),
+			"远程设置接口未接入",
+			"Esc close",
+		}
+	default:
+		return nil
+	}
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	return lines[:height]
+}
+
 func (m Model) composerLine(width int) string {
 	prompt := ">"
-	if m.Focus == FocusNav {
+	if m.Focus != FocusComposer {
 		prompt = " "
 	}
-	return fitLine(prompt+" "+m.Input, width)
+	text := m.Input
+	if text == "" && m.Focus == FocusComposer {
+		text = "message #" + m.currentChannelName()
+	}
+	return fitLine(prompt+" "+text, width)
 }
 
 func (m Model) statusLine(width int) string {

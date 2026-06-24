@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"hive-tui/internal/app"
+	"hive-tui/internal/config"
 	"hive-tui/internal/model"
 	"hive-tui/internal/wsproto"
 )
@@ -233,6 +234,35 @@ func TestMessagesRenderAsPrimaryChatStreamWithTime(t *testing.T) {
 	}
 }
 
+func TestMessagesRenderReplyReactionAndReadableNow(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Messages: []model.Message{{
+			ID:              1,
+			ChannelID:       2,
+			SenderNickname:  "zkw",
+			Content:         "收到",
+			ReplySenderName: "nivek",
+			ReplyContent:    "原话",
+			Reactions:       []model.Reaction{{Emoji: "😀", Count: 2}},
+		}},
+		Unreads: map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 88, Height: 12})
+	view := updated.(app.Model).View()
+
+	for _, want := range []string{"刚刚", "  > nivek: 原话", "  reactions: 😀 2"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in message view:\n%s", want, view)
+		}
+	}
+}
+
 func TestPlaceholderPanelsOpenAndClose(t *testing.T) {
 	m := app.NewModel(app.Dependencies{})
 	m.Mode = app.ModeChat
@@ -266,6 +296,46 @@ func TestPlaceholderPanelsOpenAndClose(t *testing.T) {
 	config := updated.(app.Model).View()
 	if !strings.Contains(config, "Config") || !strings.Contains(config, "接口未接入") {
 		t.Fatalf("expected config placeholder:\n%s", config)
+	}
+}
+
+func TestConfigPanelShowsCurrentServer(t *testing.T) {
+	cfg := config.Config{ServerURL: "https://chhat.nievkz.org"}.Normalized()
+	m := app.NewModel(app.Dependencies{Config: cfg})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 12})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(",")})
+	view := updated.(app.Model).View()
+
+	for _, want := range []string{"设置", "server_url", "chhat.nievkz.org", "https://chhat.nievkz.org", "wss://chhat.nievkz.org"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in config panel:\n%s", want, view)
+		}
+	}
+}
+
+func TestComposerShowsChannelPlaceholder(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 8})
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "> message #Lobby") {
+		t.Fatalf("expected composer placeholder:\n%s", view)
 	}
 }
 
