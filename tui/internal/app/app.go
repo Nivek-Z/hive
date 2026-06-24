@@ -9,12 +9,24 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
 	"hive-tui/internal/config"
 	"hive-tui/internal/model"
 	"hive-tui/internal/tree"
 	"hive-tui/internal/wsproto"
+)
+
+var (
+	accentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	primaryStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	subtleStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	borderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	successStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+	errorStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	columnSeparator = borderStyle.Render(" │ ")
 )
 
 type Mode int
@@ -805,7 +817,7 @@ func (m Model) chatView() string {
 	left := m.navLines()
 
 	main := []string{m.currentChannelHeader()}
-	main = append(main, strings.Repeat("─", mainWidth))
+	main = append(main, borderStyle.Render(strings.Repeat("─", mainWidth)))
 	if m.menuOpen && infoWidth == 0 {
 		main = append(main, m.menuContentLines(bodyHeight-2, mainWidth)...)
 	} else if m.panel != PanelNone {
@@ -830,16 +842,16 @@ func (m Model) chatView() string {
 
 func (m Model) currentChannelHeader() string {
 	if channel, ok := m.currentChannel(); ok {
-		header := "#" + channel.Name
+		header := accentStyle.Render("#" + channel.Name)
 		if channel.Topic != "" {
-			header = fmt.Sprintf("%s  %s", header, channel.Topic)
+			header = fmt.Sprintf("%s  %s", header, mutedStyle.Render(channel.Topic))
 		}
 		if m.messageScroll > 0 {
-			header = fmt.Sprintf("%s  scroll -%d", header, m.messageScroll)
+			header = fmt.Sprintf("%s  %s", header, mutedStyle.Render(fmt.Sprintf("scroll -%d", m.messageScroll)))
 		}
 		return header
 	}
-	return "# channel"
+	return accentStyle.Render("# channel")
 }
 
 func (m Model) currentChannel() (model.Channel, bool) {
@@ -885,9 +897,9 @@ type navRow struct {
 
 func (m Model) navLines() []string {
 	rows := m.visibleNavRows()
-	lines := []string{"Hive", "hives"}
+	lines := []string{accentStyle.Render("Hive"), mutedStyle.Render("hives")}
 	if len(m.State.Hives) == 0 {
-		lines = append(lines, "* Hive")
+		lines = append(lines, accentStyle.Render("* Hive"))
 	} else {
 		for i, row := range rows {
 			if row.Kind == navRowHive {
@@ -895,7 +907,7 @@ func (m Model) navLines() []string {
 			}
 		}
 	}
-	lines = append(lines, "channels")
+	lines = append(lines, mutedStyle.Render("channels"))
 	for i, row := range rows {
 		if row.Kind == navRowChannel {
 			lines = append(lines, m.formatNavRow(i, row))
@@ -906,13 +918,20 @@ func (m Model) navLines() []string {
 
 func (m Model) formatHiveRow(index int, hive model.Hive) string {
 	cursor := "  "
+	selected := false
 	switch {
 	case m.Focus == FocusNav && index == m.navCursor:
 		cursor = "> "
+		selected = true
 	case hive.ID == m.State.CurrentHiveID:
 		cursor = "* "
+		selected = true
 	}
-	return cursor + hiveDisplayName(hive)
+	line := cursor + hiveDisplayName(hive)
+	if selected {
+		return accentStyle.Render(line)
+	}
+	return primaryStyle.Render(line)
 }
 
 func hiveDisplayName(hive model.Hive) string {
@@ -925,15 +944,19 @@ func hiveDisplayName(hive model.Hive) string {
 
 func (m Model) formatNavRow(index int, row navRow) string {
 	cursor := "  "
+	selected := false
 	switch {
 	case m.Focus == FocusNav && index == m.navCursor:
 		cursor = "> "
+		selected = true
 	case row.Channel.Type == "TEXT" && row.Channel.ID == m.State.CurrentChannelID:
 		cursor = "* "
+		selected = true
 	}
 
 	indent := strings.Repeat("  ", row.Channel.Depth)
 	name := row.Channel.Name
+	style := primaryStyle
 	switch row.Channel.Type {
 	case "CATEGORY":
 		marker := "- "
@@ -941,13 +964,18 @@ func (m Model) formatNavRow(index int, row navRow) string {
 			marker = "+ "
 		}
 		name = marker + name
+		style = mutedStyle
 	case "TEXT":
 		name = "# " + name
 	}
 	if row.Channel.Unread > 0 {
 		name = fmt.Sprintf("%s [%d]", name, row.Channel.Unread)
 	}
-	return cursor + indent + name
+	line := cursor + indent + name
+	if selected {
+		return accentStyle.Render(line)
+	}
+	return style.Render(line)
 }
 
 func (m Model) visibleNavRows() []navRow {
@@ -1156,27 +1184,27 @@ func (m Model) infoLines(height, width int) []string {
 	}
 	userName := displayUserName(m.State.CurrentUser)
 	lines := []string{
-		"ONLINE",
+		mutedStyle.Render("ONLINE"),
 	}
 	if userName != "" {
-		lines = append(lines, greenDot()+" "+userName)
+		lines = append(lines, greenDot()+" "+primaryStyle.Render(userName))
 	} else if len(m.State.OnlineUserIDs) > 0 {
-		lines = append(lines, fmt.Sprintf("%s %d online", greenDot(), len(m.State.OnlineUserIDs)))
+		lines = append(lines, fmt.Sprintf("%s %s", greenDot(), primaryStyle.Render(fmt.Sprintf("%d online", len(m.State.OnlineUserIDs)))))
 	} else {
-		lines = append(lines, "members API pending")
+		lines = append(lines, mutedStyle.Render("members API pending"))
 	}
 	if len(m.State.OnlineUserIDs) > 1 && userName != "" {
-		lines = append(lines, fmt.Sprintf("%d online", len(m.State.OnlineUserIDs)))
+		lines = append(lines, mutedStyle.Render(fmt.Sprintf("%d online", len(m.State.OnlineUserIDs))))
 	}
 	lines = append(lines,
-		"members API pending",
+		mutedStyle.Render("members API pending"),
 		"",
-		"CURRENT",
-		m.currentHiveName(),
-		"#"+m.currentChannelName(),
+		mutedStyle.Render("CURRENT"),
+		accentStyle.Render(m.currentHiveName()),
+		accentStyle.Render("#"+m.currentChannelName()),
 		"",
-		"SERVER",
-		m.Deps.Config.RawHost,
+		mutedStyle.Render("SERVER"),
+		primaryStyle.Render(m.Deps.Config.RawHost),
 	)
 	if height < len(lines) {
 		return lines[:height]
@@ -1185,7 +1213,7 @@ func (m Model) infoLines(height, width int) []string {
 }
 
 func greenDot() string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("●")
+	return successStyle.Render("●")
 }
 
 func displayUserName(user model.User) string {
@@ -1201,24 +1229,24 @@ func formatMessage(message model.Message, width int) []string {
 	if author == "" {
 		author = "system"
 	}
-	meta := fmt.Sprintf("%s  %s", author, formatMessageTime(message.CreatedAt))
+	meta := fmt.Sprintf("%s  %s", accentStyle.Render(author), mutedStyle.Render(formatMessageTime(message.CreatedAt)))
 	content := displayContent(message)
 	contentWidth := max(4, width-2)
 	lines := []string{fitLine(meta, metaWidth)}
 
 	if reply := displayReply(message); reply != "" {
 		for _, line := range wrapCells("> "+reply, contentWidth) {
-			lines = append(lines, fitLine("  "+line, width))
+			lines = append(lines, mutedStyle.Render(fitLine("  "+line, width)))
 		}
 	}
 
 	for _, line := range wrapCells(content, contentWidth) {
-		lines = append(lines, fitLine("  "+line, width))
+		lines = append(lines, primaryStyle.Render(fitLine("  "+line, width)))
 	}
 
 	if reactions := displayReactions(message.Reactions); reactions != "" {
 		for _, line := range wrapCells("reactions: "+reactions, contentWidth) {
-			lines = append(lines, fitLine("  "+line, width))
+			lines = append(lines, subtleStyle.Render(fitLine("  "+line, width)))
 		}
 	}
 
@@ -1329,9 +1357,9 @@ func (m Model) panelLines(height, width int) []string {
 	}
 	lines := []string{
 		"",
-		title,
-		"接口未接入",
-		"Esc close",
+		accentStyle.Render(title),
+		mutedStyle.Render("接口未接入"),
+		mutedStyle.Render("Esc close"),
 	}
 	if height <= 0 || len(lines) <= height {
 		return lines
@@ -1345,28 +1373,28 @@ func (m Model) panelContentLines(height, width int) []string {
 	case PanelFriends:
 		lines = []string{
 			"",
-			"Friends 好友",
-			"接口未接入",
-			"等待后端提供好友接口",
-			"Esc close",
+			accentStyle.Render("Friends 好友"),
+			mutedStyle.Render("接口未接入"),
+			mutedStyle.Render("等待后端提供好友接口"),
+			mutedStyle.Render("Esc close"),
 		}
 	case PanelMembers:
 		lines = []string{
 			"",
-			"Members 在线成员",
-			"接口未接入",
-			"等待后端提供在线成员接口",
-			"Esc close",
+			accentStyle.Render("Members 在线成员"),
+			mutedStyle.Render("接口未接入"),
+			mutedStyle.Render("等待后端提供在线成员接口"),
+			mutedStyle.Render("Esc close"),
 		}
 	case PanelConfig:
 		lines = []string{
 			"",
-			"Config 设置",
+			accentStyle.Render("Config 设置"),
 			fmt.Sprintf("server_url  %s", m.Deps.Config.RawHost),
 			fmt.Sprintf("REST        %s", m.Deps.Config.RESTBase),
 			fmt.Sprintf("WS          %s", m.Deps.Config.WSBase),
-			"远程设置接口未接入",
-			"Esc close",
+			mutedStyle.Render("远程设置接口未接入"),
+			mutedStyle.Render("Esc close"),
 		}
 	default:
 		return nil
@@ -1380,20 +1408,28 @@ func (m Model) panelContentLines(height, width int) []string {
 func (m Model) menuContentLines(height, width int) []string {
 	items := m.menuItems()
 	contentWidth := max(4, width-4)
-	lines := []string{"", m.menuTitle()}
+	lines := []string{"", accentStyle.Render(m.menuTitle())}
 	for i, item := range items {
 		prefix := "  "
+		selected := false
 		if i == m.menuCursor {
 			prefix = "> "
+			selected = true
 		}
 		line := prefix + item.Label
 		if item.Hint != "" {
 			gap := max(1, contentWidth-cellWidth(line)-cellWidth(item.Hint))
 			line = line + strings.Repeat(" ", gap) + item.Hint
 		}
-		lines = append(lines, fitLine(line, contentWidth))
+		line = fitLine(line, contentWidth)
+		if selected {
+			line = accentStyle.Render(line)
+		} else {
+			line = primaryStyle.Render(line)
+		}
+		lines = append(lines, line)
 	}
-	lines = append(lines, "", "Esc close")
+	lines = append(lines, "", mutedStyle.Render("Esc close"))
 	boxed := strings.Split(renderBox(lines, contentWidth), "\n")
 	if height <= 0 || len(boxed) <= height {
 		return boxed
@@ -1410,33 +1446,35 @@ func (m Model) composerLine(width int) string {
 	if text == "" && m.Focus == FocusComposer {
 		text = "message #" + m.currentChannelName()
 	}
-	return fitLine(prompt+" "+text, width)
+	line := prompt + " " + text
+	if m.Focus == FocusComposer {
+		return accentStyle.Render(fitLine(line, width))
+	}
+	return mutedStyle.Render(fitLine(line, width))
 }
 
 func (m Model) statusLine(width int) string {
-	parts := []string{connectionStatus(m.Status), strings.ToUpper(focusName(m.Focus))}
+	parts := []string{styleConnectionStatus(m.Status), accentStyle.Render(strings.ToUpper(focusName(m.Focus)))}
 	if m.menuOpen {
-		parts = append(parts, "Up/Down choose", "Enter select", "Esc close")
+		parts = append(parts, mutedStyle.Render("Up/Down choose"), mutedStyle.Render("Enter select"), mutedStyle.Render("Esc close"))
 	} else {
-		parts = append(parts, "Tab menu", "Enter")
+		parts = append(parts, mutedStyle.Render("Tab menu"), mutedStyle.Render("Enter"))
 	}
 	if m.messageScroll > 0 {
-		parts = append(parts, fmt.Sprintf("scroll -%d", m.messageScroll))
+		parts = append(parts, mutedStyle.Render(fmt.Sprintf("scroll -%d", m.messageScroll)))
 	}
 	if m.Status != "" && m.Status != "connected" && !strings.HasPrefix(m.Status, "server ") {
-		parts = append(parts, m.Status)
+		parts = append(parts, primaryStyle.Render(m.Status))
 	}
 	return truncateCells(strings.Join(parts, " | "), width)
 }
 
-func connectionStatus(status string) string {
+func styleConnectionStatus(status string) string {
 	if strings.Contains(strings.ToLower(status), "disconnected") {
-		return "offline"
+		return errorStyle.Render("offline")
 	}
-	return "connected"
+	return successStyle.Render("connected")
 }
-
-const columnSeparator = " │ "
 
 func navWidthFor(width int) int {
 	if width < 54 {
@@ -1461,11 +1499,13 @@ func renderBox(lines []string, width int) string {
 	if width < 4 {
 		width = 4
 	}
-	border := "+" + strings.Repeat("-", width+2) + "+"
+	border := borderStyle.Render("+" + strings.Repeat("-", width+2) + "+")
+	left := borderStyle.Render("|")
+	right := borderStyle.Render("|")
 	out := make([]string, 0, len(lines)+2)
 	out = append(out, border)
 	for _, line := range lines {
-		out = append(out, "| "+fitLine(line, width)+" |")
+		out = append(out, left+" "+fitLine(line, width)+" "+right)
 	}
 	out = append(out, border)
 	return strings.Join(out, "\n")
@@ -1504,21 +1544,11 @@ func truncateCells(s string, width int) string {
 	if width <= ellipsisWidth {
 		return strings.Repeat(".", width)
 	}
-	var b strings.Builder
-	used := 0
-	for _, r := range s {
-		rw := runeWidth(r)
-		if used+rw+ellipsisWidth > width {
-			break
-		}
-		b.WriteRune(r)
-		used += rw
-	}
-	return b.String() + ellipsis
+	return ansi.Truncate(s, width, ellipsis)
 }
 
 func cellWidth(s string) int {
-	return lipgloss.Width(s)
+	return ansi.StringWidth(s)
 }
 
 func runeWidth(r rune) int {

@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"hive-tui/internal/app"
 	"hive-tui/internal/config"
@@ -381,6 +382,42 @@ func TestChatViewUsesColumnBordersAndFramedMenu(t *testing.T) {
 			t.Fatalf("expected %q in framed menu:\n%s", want, menu)
 		}
 	}
+}
+
+func TestChatViewAppliesSubtleTerminalTheme(t *testing.T) {
+	withANSI256(t)
+
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusNav
+	m.State = app.State{
+		CurrentHiveID:    1,
+		Hives:            []model.Hive{{ID: 1, Name: "fgm"}},
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, HiveID: 1, Type: "TEXT", Name: "大厅", Topic: "什么都能聊的地方"}},
+		Messages:         []model.Message{{ID: 1, ChannelID: 2, SenderNickname: "zkw", Content: "fgm干嘛呢", CreatedAt: "2026-06-24T14:39:00"}},
+		CurrentUser:      model.User{ID: 1, Username: "nivek"},
+		OnlineUserIDs:    []int64{1},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	view := updated.(app.Model).View()
+
+	for _, want := range []string{"38;5;220", "38;5;240"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected theme color %q in chat view:\n%s", want, view)
+		}
+	}
+}
+
+func withANSI256(t *testing.T) {
+	t.Helper()
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(previous)
+	})
 }
 
 func TestComposerMenuCanJumpToHiveSelection(t *testing.T) {
