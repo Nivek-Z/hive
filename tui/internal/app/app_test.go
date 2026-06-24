@@ -42,6 +42,23 @@ func TestLoginViewRendersFramedPanel(t *testing.T) {
 	}
 }
 
+func TestLoginViewUsesTerminalThemeAndFocusedField(t *testing.T) {
+	withANSI256(t)
+
+	m := app.NewModel(app.Dependencies{})
+	m.Username = "nivek"
+	m.Password = "123456"
+	m.Focus = app.FocusLoginUsername
+
+	view := m.View()
+
+	for _, want := range []string{"38;5;220", "38;5;240", "ACCESS", "> Username", "server localhost:8080"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in themed login view:\n%s", want, view)
+		}
+	}
+}
+
 func TestLoginMenuIncludesRegister(t *testing.T) {
 	m := app.NewModel(app.Dependencies{})
 

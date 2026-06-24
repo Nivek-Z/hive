@@ -763,32 +763,41 @@ func (m Model) sendMessageCmd(text string) tea.Cmd {
 }
 
 func (m Model) loginView() string {
-	userPrefix := " "
-	passPrefix := " "
-	if m.Focus == FocusLoginUsername {
-		userPrefix = ">"
-	}
-	if m.Focus == FocusLoginPassword {
-		passPrefix = ">"
-	}
+	boxWidth := loginBoxWidth(m.width)
 	lines := []string{
-		"Hive TUI",
-		"terminal chat client",
+		"Hive TUI  " + accentStyle.Render("ACCESS"),
+		mutedStyle.Render("terminal chat client"),
+		borderStyle.Render(strings.Repeat("─", boxWidth)),
 		"",
-		fmt.Sprintf("%s Username: %s", userPrefix, m.Username),
-		fmt.Sprintf("%s Password: %s", passPrefix, strings.Repeat("*", len(m.Password))),
+		loginFieldLine("Username", m.Username, m.Focus == FocusLoginUsername),
+		loginFieldLine("Password", strings.Repeat("*", len(m.Password)), m.Focus == FocusLoginPassword),
 		"",
-		"Tab menu | Enter login | Ctrl+C quit",
-		"server " + m.Deps.Config.RawHost,
+		mutedStyle.Render("Tab menu") + "  " + accentStyle.Render("Enter login") + "  " + mutedStyle.Render("Ctrl+C quit"),
+		mutedStyle.Render("server " + m.Deps.Config.RawHost),
 	}
 	if m.menuOpen {
 		lines = append(lines, "")
-		lines = append(lines, m.menuContentLines(10, max(18, loginBoxWidth(m.width)-2))...)
+		lines = append(lines, m.menuContentLines(10, max(18, boxWidth-2))...)
 	}
 	if m.Status != "" && m.Status != "server "+m.Deps.Config.RawHost {
-		lines = append(lines, "", m.Status)
+		lines = append(lines, "", primaryStyle.Render(m.Status))
 	}
-	return renderBox(lines, loginBoxWidth(m.width))
+	return centerBlock(renderBox(lines, boxWidth), m.width, m.height)
+}
+
+func loginFieldLine(label, value string, focused bool) string {
+	prefix := "  "
+	if focused {
+		prefix = "> "
+	}
+	if strings.TrimSpace(value) == "" {
+		value = " "
+	}
+	line := fmt.Sprintf("%s%-10s %s", prefix, label+":", value)
+	if focused {
+		return accentStyle.Render(line)
+	}
+	return mutedStyle.Render(prefix+label+":") + " " + primaryStyle.Render(value)
 }
 
 func (m Model) chatView() string {
@@ -1508,6 +1517,33 @@ func renderBox(lines []string, width int) string {
 		out = append(out, left+" "+fitLine(line, width)+" "+right)
 	}
 	out = append(out, border)
+	return strings.Join(out, "\n")
+}
+
+func centerBlock(block string, width, height int) string {
+	lines := strings.Split(block, "\n")
+	if len(lines) == 0 {
+		return block
+	}
+	blockWidth := 0
+	for _, line := range lines {
+		blockWidth = max(blockWidth, cellWidth(line))
+	}
+	leftPad := ""
+	if width > blockWidth {
+		leftPad = strings.Repeat(" ", (width-blockWidth)/2)
+	}
+	topPad := 0
+	if height > len(lines)+2 {
+		topPad = (height - len(lines)) / 3
+	}
+	out := make([]string, 0, topPad+len(lines))
+	for range topPad {
+		out = append(out, "")
+	}
+	for _, line := range lines {
+		out = append(out, leftPad+line)
+	}
 	return strings.Join(out, "\n")
 }
 
