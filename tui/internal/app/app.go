@@ -127,6 +127,16 @@ type channelLoadedMsg struct {
 	Err         error
 }
 
+type hiveLoadedMsg struct {
+	HiveID           int64
+	HiveName         string
+	Channels         []model.Channel
+	Unreads          map[int64]int
+	CurrentChannelID int64
+	Messages         []model.Message
+	Err              error
+}
+
 type loginCompleteMsg struct {
 	State  State
 	WS     WSClient
@@ -180,6 +190,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messageScroll = 0
 			m.Status = "opened #" + msg.ChannelName
 		}
+		return m, nil
+	case hiveLoadedMsg:
+		if msg.Err != nil {
+			m.Status = msg.Err.Error()
+			return m, nil
+		}
+		m.State.CurrentHiveID = msg.HiveID
+		m.State.Channels = msg.Channels
+		m.State.Unreads = msg.Unreads
+		m.State.CurrentChannelID = msg.CurrentChannelID
+		m.State.Messages = msg.Messages
+		m.messageScroll = 0
+		m.panel = PanelNone
+		m.Status = "opened hive " + msg.HiveName
+		m.syncNavCursorToCurrent()
 		return m, nil
 	case loginCompleteMsg:
 		m.State = msg.State
@@ -346,6 +371,20 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		rows := m.visibleNavRows()
 		if m.navCursor >= 0 && m.navCursor < len(rows) {
 			row := rows[m.navCursor]
+			if row.Kind == navRowHive {
+				name := hiveDisplayName(row.Hive)
+				if row.Hive.ID == 0 {
+					m.Status = "hive unavailable"
+					return m, nil
+				}
+				if row.Hive.ID == m.State.CurrentHiveID {
+					m.Status = "current hive " + name
+					return m, nil
+				}
+				m.messageScroll = 0
+				m.Status = "loading hive " + name
+				return m, m.openHiveCmd(row.Hive.ID, name)
+			}
 			if row.Channel.Type == "CATEGORY" {
 				m.ensureCollapsed()
 				m.collapsed[row.Channel.ID] = !m.collapsed[row.Channel.ID]
@@ -491,7 +530,10 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 	case menuActionNavOpen:
 		return m.handleEnter()
 	case menuActionSwitchHive:
-		m.Status = "hive switch API not connected"
+		m.Focus = FocusNav
+		m.panel = PanelNone
+		m.syncNavCursorToCurrentHive()
+		m.Status = "select hive with Up/Down, Enter"
 	case menuActionRefreshChannels:
 		m.Status = "refresh channels pending"
 	case menuActionLogin:
@@ -531,6 +573,7 @@ func (m Model) menuItems() []menuItem {
 	default:
 		return []menuItem{
 			{Label: "发送消息", Hint: "Enter", Action: menuActionSend},
+			{Label: "切换群聊", Hint: "hives", Action: menuActionSwitchHive},
 			{Label: "好友", Hint: "F", Action: menuActionFriends},
 			{Label: "在线成员", Hint: "M", Action: menuActionMembers},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
@@ -647,6 +690,47 @@ func (m Model) openChannelCmd(channelID int64, channelName string) tea.Cmd {
 	}
 }
 
+func (m Model) openHiveCmd(hiveID int64, hiveName string) tea.Cmd {
+	return func() tea.Msg {
+		if m.Deps.API == nil {
+			return hiveLoadedMsg{HiveID: hiveID, HiveName: hiveName, Err: fmt.Errorf("API client not configured")}
+		}
+		detail, err := m.Deps.API.HiveDetail(context.Background(), hiveID)
+		if err != nil {
+			return hiveLoadedMsg{HiveID: hiveID, HiveName: hiveName, Err: err}
+		}
+		unreads := map[int64]int{}
+		for _, unread := range detail.Unreads {
+			unreads[unread.ChannelID] = unread.Count
+		}
+		var currentChannelID int64
+		for _, channel := range detail.Channels {
+			if channel.Type == "TEXT" {
+				currentChannelID = channel.ID
+				break
+			}
+		}
+		var messages []model.Message
+		if currentChannelID != 0 {
+			messages, err = m.Deps.API.Messages(context.Background(), currentChannelID, 50)
+			if err != nil {
+				return hiveLoadedMsg{HiveID: hiveID, HiveName: hiveName, Err: err}
+			}
+			if len(messages) > 0 {
+				_ = m.Deps.API.MarkRead(context.Background(), currentChannelID, messages[len(messages)-1].ID)
+			}
+		}
+		return hiveLoadedMsg{
+			HiveID:           hiveID,
+			HiveName:         hiveName,
+			Channels:         detail.Channels,
+			Unreads:          unreads,
+			CurrentChannelID: currentChannelID,
+			Messages:         messages,
+		}
+	}
+}
+
 func (m Model) sendMessageCmd(text string) tea.Cmd {
 	channelID := m.State.CurrentChannelID
 	return func() tea.Msg {
@@ -687,19 +771,7 @@ func (m Model) loginView() string {
 	}
 	if m.menuOpen {
 		lines = append(lines, "")
-		lines = append(lines, m.menuTitle())
-		for i, item := range m.menuItems() {
-			prefix := "  "
-			if i == m.menuCursor {
-				prefix = "> "
-			}
-			line := prefix + item.Label
-			if item.Hint != "" {
-				line = fmt.Sprintf("%-18s %s", line, item.Hint)
-			}
-			lines = append(lines, line)
-		}
-		lines = append(lines, "Esc close")
+		lines = append(lines, m.menuContentLines(10, max(18, loginBoxWidth(m.width)-2))...)
 	}
 	if m.Status != "" && m.Status != "server "+m.Deps.Config.RawHost {
 		lines = append(lines, "", m.Status)
@@ -723,12 +795,17 @@ func (m Model) chatView() string {
 	bodyHeight := height - 2
 	leftWidth := navWidthFor(width)
 	infoWidth := infoWidthFor(width)
-	mainWidth := max(8, width-leftWidth-infoWidth-2)
+	sepWidth := cellWidth(columnSeparator)
+	sepCount := 1
+	if infoWidth > 0 {
+		sepCount = 2
+	}
+	mainWidth := max(8, width-leftWidth-infoWidth-(sepWidth*sepCount))
 
 	left := m.navLines()
 
 	main := []string{m.currentChannelHeader()}
-	main = append(main, strings.Repeat("-", mainWidth))
+	main = append(main, strings.Repeat("─", mainWidth))
 	if m.menuOpen && infoWidth == 0 {
 		main = append(main, m.menuContentLines(bodyHeight-2, mainWidth)...)
 	} else if m.panel != PanelNone {
@@ -793,33 +870,57 @@ func (m Model) currentHiveName() string {
 	return "Hive"
 }
 
+type navRowKind int
+
+const (
+	navRowHive navRowKind = iota
+	navRowChannel
+)
+
 type navRow struct {
+	Kind    navRowKind
+	Hive    model.Hive
 	Channel tree.VisibleChannel
 }
 
 func (m Model) navLines() []string {
 	rows := m.visibleNavRows()
 	lines := []string{"Hive", "hives"}
-	hives := m.State.Hives
-	if len(hives) == 0 {
-		hives = []model.Hive{{Name: "Hive"}}
-	}
-	for _, hive := range hives {
-		prefix := "  "
-		if hive.ID == m.State.CurrentHiveID || (m.State.CurrentHiveID == 0 && hive.Name == "Hive") {
-			prefix = "* "
+	if len(m.State.Hives) == 0 {
+		lines = append(lines, "* Hive")
+	} else {
+		for i, row := range rows {
+			if row.Kind == navRowHive {
+				lines = append(lines, m.formatHiveRow(i, row.Hive))
+			}
 		}
-		name := hive.Name
-		if strings.TrimSpace(name) == "" {
-			name = "Hive"
-		}
-		lines = append(lines, prefix+name)
 	}
 	lines = append(lines, "channels")
 	for i, row := range rows {
-		lines = append(lines, m.formatNavRow(i, row))
+		if row.Kind == navRowChannel {
+			lines = append(lines, m.formatNavRow(i, row))
+		}
 	}
 	return lines
+}
+
+func (m Model) formatHiveRow(index int, hive model.Hive) string {
+	cursor := "  "
+	switch {
+	case m.Focus == FocusNav && index == m.navCursor:
+		cursor = "> "
+	case hive.ID == m.State.CurrentHiveID:
+		cursor = "* "
+	}
+	return cursor + hiveDisplayName(hive)
+}
+
+func hiveDisplayName(hive model.Hive) string {
+	name := strings.TrimSpace(hive.Name)
+	if name == "" {
+		return "Hive"
+	}
+	return name
 }
 
 func (m Model) formatNavRow(index int, row navRow) string {
@@ -850,18 +951,22 @@ func (m Model) formatNavRow(index int, row navRow) string {
 }
 
 func (m Model) visibleNavRows() []navRow {
+	rows := make([]navRow, 0, len(m.State.Hives)+len(m.State.Channels))
+	for _, hive := range m.State.Hives {
+		rows = append(rows, navRow{Kind: navRowHive, Hive: hive})
+	}
+
 	visible := tree.BuildVisible(m.State.Channels, m.State.Unreads)
 	byID := make(map[int64]tree.VisibleChannel, len(visible))
 	for _, channel := range visible {
 		byID[channel.ID] = channel
 	}
 
-	rows := make([]navRow, 0, len(visible))
 	for _, channel := range visible {
 		if m.hiddenByCollapsedParent(channel, byID) {
 			continue
 		}
-		rows = append(rows, navRow{Channel: channel})
+		rows = append(rows, navRow{Kind: navRowChannel, Channel: channel})
 	}
 	return rows
 }
@@ -908,7 +1013,24 @@ func (m *Model) clampNavCursor() {
 func (m *Model) syncNavCursorToCurrent() {
 	rows := m.visibleNavRows()
 	for i, row := range rows {
-		if row.Channel.ID == m.State.CurrentChannelID {
+		if row.Kind == navRowChannel && row.Channel.ID == m.State.CurrentChannelID {
+			m.navCursor = i
+			return
+		}
+	}
+	m.clampNavCursor()
+}
+
+func (m *Model) syncNavCursorToCurrentHive() {
+	rows := m.visibleNavRows()
+	for i, row := range rows {
+		if row.Kind == navRowHive && row.Hive.ID == m.State.CurrentHiveID {
+			m.navCursor = i
+			return
+		}
+	}
+	for i, row := range rows {
+		if row.Kind == navRowHive {
 			m.navCursor = i
 			return
 		}
@@ -1002,7 +1124,7 @@ func renderChatColumns(left, right []string, height, leftWidth, rightWidth int) 
 		if i < len(right) {
 			r = right[i]
 		}
-		lines = append(lines, fitLine(l, leftWidth)+" "+fitLine(r, rightWidth))
+		lines = append(lines, fitLine(l, leftWidth)+columnSeparator+fitLine(r, rightWidth))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1023,7 +1145,7 @@ func renderChatThreeColumns(left, main, info []string, height, leftWidth, mainWi
 		if i < len(info) {
 			r = info[i]
 		}
-		lines = append(lines, fitLine(l, leftWidth)+" "+fitLine(c, mainWidth)+" "+fitLine(r, infoWidth))
+		lines = append(lines, fitLine(l, leftWidth)+columnSeparator+fitLine(c, mainWidth)+columnSeparator+fitLine(r, infoWidth))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1257,6 +1379,7 @@ func (m Model) panelContentLines(height, width int) []string {
 
 func (m Model) menuContentLines(height, width int) []string {
 	items := m.menuItems()
+	contentWidth := max(4, width-4)
 	lines := []string{"", m.menuTitle()}
 	for i, item := range items {
 		prefix := "  "
@@ -1265,16 +1388,17 @@ func (m Model) menuContentLines(height, width int) []string {
 		}
 		line := prefix + item.Label
 		if item.Hint != "" {
-			gap := max(1, width-cellWidth(line)-cellWidth(item.Hint))
+			gap := max(1, contentWidth-cellWidth(line)-cellWidth(item.Hint))
 			line = line + strings.Repeat(" ", gap) + item.Hint
 		}
-		lines = append(lines, fitLine(line, width))
+		lines = append(lines, fitLine(line, contentWidth))
 	}
 	lines = append(lines, "", "Esc close")
-	if height <= 0 || len(lines) <= height {
-		return lines
+	boxed := strings.Split(renderBox(lines, contentWidth), "\n")
+	if height <= 0 || len(boxed) <= height {
+		return boxed
 	}
-	return lines[:height]
+	return boxed[:height]
 }
 
 func (m Model) composerLine(width int) string {
@@ -1312,6 +1436,8 @@ func connectionStatus(status string) string {
 	return "connected"
 }
 
+const columnSeparator = " │ "
+
 func navWidthFor(width int) int {
 	if width < 54 {
 		return max(14, width/3)
@@ -1332,8 +1458,8 @@ func loginBoxWidth(width int) int {
 }
 
 func renderBox(lines []string, width int) string {
-	if width < 10 {
-		width = 10
+	if width < 4 {
+		width = 4
 	}
 	border := "+" + strings.Repeat("-", width+2) + "+"
 	out := make([]string, 0, len(lines)+2)
@@ -1347,7 +1473,12 @@ func renderBox(lines []string, width int) string {
 
 func messageWidthFor(width int) int {
 	width = max(24, width)
-	return max(8, width-navWidthFor(width)-infoWidthFor(width)-2)
+	infoWidth := infoWidthFor(width)
+	sepCount := 1
+	if infoWidth > 0 {
+		sepCount = 2
+	}
+	return max(8, width-navWidthFor(width)-infoWidth-(cellWidth(columnSeparator)*sepCount))
 }
 
 func fitLine(s string, width int) string {

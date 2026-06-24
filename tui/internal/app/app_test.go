@@ -230,6 +230,55 @@ func TestLoginCommandStoresHiveAndCurrentUser(t *testing.T) {
 	}
 }
 
+func TestNavCanSelectHiveAndLoadsItsChannels(t *testing.T) {
+	api := &fakeAPI{
+		hives: []model.Hive{
+			{ID: 1, Name: "fgm"},
+			{ID: 2, Name: "游戏群"},
+		},
+		detailsByHive: map[int64]model.HiveDetail{
+			2: {
+				ID: 2,
+				Channels: []model.Channel{
+					{ID: 20, HiveID: 2, Type: "TEXT", Name: "开黑", Position: 1},
+				},
+			},
+		},
+		messagesByChannel: map[int64][]model.Message{
+			20: {{ID: 200, ChannelID: 20, SenderNickname: "zkw", Content: "game lobby"}},
+		},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusNav
+	m.State = app.State{
+		CurrentHiveID:    1,
+		Hives:            api.hives,
+		CurrentChannelID: 10,
+		Channels:         []model.Channel{{ID: 10, HiveID: 1, Type: "TEXT", Name: "大厅"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected hive loading command")
+	}
+	updated, _ = updated.Update(cmd())
+	next := updated.(app.Model)
+
+	if next.State.CurrentHiveID != 2 || next.State.CurrentChannelID != 20 {
+		t.Fatalf("state after hive switch = %#v", next.State)
+	}
+	view := next.View()
+	for _, want := range []string{"游戏群", "#开黑", "game lobby", "opened hive 游戏群"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q after hive switch:\n%s", want, view)
+		}
+	}
+}
+
 func TestNavShowsFirstChannelAndTogglesCategory(t *testing.T) {
 	parent := int64(1)
 	m := app.NewModel(app.Dependencies{})
@@ -299,6 +348,67 @@ func TestSelectingChannelLoadsHistory(t *testing.T) {
 	}
 	if !strings.Contains(next.View(), "opened #Random") {
 		t.Fatalf("expected open feedback:\n%s", next.View())
+	}
+}
+
+func TestChatViewUsesColumnBordersAndFramedMenu(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		Hives:            []model.Hive{{ID: 1, Name: "fgm"}},
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, HiveID: 1, Type: "TEXT", Name: "大厅", Topic: "什么都能聊的地方"}},
+		Messages:         []model.Message{{ID: 1, ChannelID: 2, SenderNickname: "zkw", Content: "fgm干嘛呢", CreatedAt: "2026-06-24T14:39:00"}},
+		CurrentUser:      model.User{ID: 1, Username: "nivek"},
+		OnlineUserIDs:    []int64{1},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	view := updated.(app.Model).View()
+	for _, want := range []string{"│", "─", "ONLINE", "CURRENT", "SERVER"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in bordered chat view:\n%s", want, view)
+		}
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab})
+	menu := updated.(app.Model).View()
+	for _, want := range []string{"+", "COMPOSER MENU", "> 发送消息"} {
+		if !strings.Contains(menu, want) {
+			t.Fatalf("expected %q in framed menu:\n%s", want, menu)
+		}
+	}
+}
+
+func TestComposerMenuCanJumpToHiveSelection(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		Hives:            []model.Hive{{ID: 1, Name: "fgm"}, {ID: 2, Name: "游戏群"}},
+		CurrentChannelID: 10,
+		Channels:         []model.Channel{{ID: 10, HiveID: 1, Type: "TEXT", Name: "大厅"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next := updated.(app.Model)
+
+	if next.Focus != app.FocusNav {
+		t.Fatalf("expected composer menu to focus nav, got %#v", next.Focus)
+	}
+	view := next.View()
+	for _, want := range []string{"> fgm", "select hive with Up/Down, Enter"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q after menu hive jump:\n%s", want, view)
+		}
 	}
 }
 
@@ -449,6 +559,7 @@ func TestTabMenuMovesSelectionAndExecutesWithEnter(t *testing.T) {
 	}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	menu := updated.(app.Model).View()
@@ -652,6 +763,7 @@ type fakeAPI struct {
 	readMessageIDs    []int64
 	messagesByChannel map[int64][]model.Message
 	hives             []model.Hive
+	detailsByHive     map[int64]model.HiveDetail
 	loginUser         model.User
 }
 
@@ -672,11 +784,16 @@ func (f *fakeAPI) Hives(context.Context) ([]model.Hive, error) {
 	return []model.Hive{{ID: 1, Name: "Hive"}}, nil
 }
 
-func (f *fakeAPI) HiveDetail(context.Context, int64) (model.HiveDetail, error) {
+func (f *fakeAPI) HiveDetail(_ context.Context, hiveID int64) (model.HiveDetail, error) {
+	if f.detailsByHive != nil {
+		if detail, ok := f.detailsByHive[hiveID]; ok {
+			return detail, nil
+		}
+	}
 	return model.HiveDetail{
-		ID: 1,
+		ID: hiveID,
 		Channels: []model.Channel{
-			{ID: 2, Type: "TEXT", Name: "general", Position: 1},
+			{ID: 2, HiveID: hiveID, Type: "TEXT", Name: "general", Position: 1},
 		},
 		Unreads: []model.UnreadRow{{ChannelID: 2, Count: 1}},
 	}, nil
