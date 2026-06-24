@@ -53,6 +53,7 @@ const (
 	PanelFriends
 	PanelMembers
 	PanelConfig
+	PanelCommand
 )
 
 type menuAction int
@@ -111,14 +112,16 @@ type Model struct {
 	Password string
 	Input    string
 
-	width         int
-	height        int
-	messageScroll int
-	navCursor     int
-	collapsed     map[int64]bool
-	panel         Panel
-	menuOpen      bool
-	menuCursor    int
+	width          int
+	height         int
+	messageScroll  int
+	navCursor      int
+	collapsed      map[int64]bool
+	panel          Panel
+	menuOpen       bool
+	menuCursor     int
+	panelTitle     string
+	panelDataLines []string
 }
 
 type incomingMessageMsg struct {
@@ -131,6 +134,17 @@ type deletedMessageMsg struct {
 }
 
 type statusMsg string
+
+type commandResultMsg struct {
+	Title       string
+	Lines       []string
+	Status      string
+	Err         error
+	SetChannel  bool
+	ChannelID   int64
+	ChannelName string
+	Messages    []model.Message
+}
 
 type channelLoadedMsg struct {
 	ChannelID   int64
@@ -191,6 +205,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case statusMsg:
 		m.Status = string(msg)
+		return m, nil
+	case commandResultMsg:
+		if msg.Err != nil {
+			m.Status = msg.Err.Error()
+			return m, nil
+		}
+		if msg.SetChannel {
+			m.State.CurrentChannelID = msg.ChannelID
+			m.ensureCommandChannel(msg.ChannelID, msg.ChannelName)
+			m.State.Messages = msg.Messages
+			m.messageScroll = 0
+			m.Focus = FocusComposer
+		}
+		if msg.Title != "" || len(msg.Lines) > 0 {
+			m.panel = PanelCommand
+			m.panelTitle = msg.Title
+			m.panelDataLines = append([]string(nil), msg.Lines...)
+		}
+		if msg.Status != "" {
+			m.Status = msg.Status
+		}
 		return m, nil
 	case channelLoadedMsg:
 		if msg.Err != nil {
@@ -366,7 +401,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuOpen {
 			return m, nil
 		}
-		return m.handleRunes(msg.String()), nil
+		next, cmd := m.handleRunes(msg.String())
+		return next, cmd
 	}
 	return m, nil
 }
@@ -428,6 +464,9 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Input = ""
+		if strings.HasPrefix(text, "/") {
+			return m, m.commandCmd(text)
+		}
 		return m, m.sendMessageCmd(text)
 	}
 	return m, nil
@@ -446,39 +485,41 @@ func (m Model) handleBackspace() Model {
 	return m
 }
 
-func (m Model) handleRunes(s string) Model {
+func (m Model) handleRunes(s string) (Model, tea.Cmd) {
 	switch {
 	case m.Mode == ModeLogin && m.Focus == FocusLoginUsername:
 		m.Username += s
 	case m.Mode == ModeLogin && m.Focus == FocusLoginPassword:
 		m.Password += s
 	case m.Mode == ModeChat:
-		if m.Focus != FocusComposer && m.openPanelShortcut(s) {
-			return m
+		if m.Focus != FocusComposer {
+			if ok, cmd := m.openPanelShortcut(s); ok {
+				return m, cmd
+			}
 		}
 		m.panel = PanelNone
 		m.Focus = FocusComposer
 		m.Input += s
 	}
-	return m
+	return m, nil
 }
 
-func (m *Model) openPanelShortcut(s string) bool {
+func (m *Model) openPanelShortcut(s string) (bool, tea.Cmd) {
 	switch strings.ToLower(s) {
 	case "f":
 		m.panel = PanelFriends
-		m.Status = "friends panel"
-		return true
+		m.Status = "loading friends"
+		return true, m.loadFriendsCmd()
 	case "m":
 		m.panel = PanelMembers
-		m.Status = "members panel"
-		return true
+		m.Status = "loading members"
+		return true, m.loadMembersCmd()
 	case ",":
 		m.panel = PanelConfig
 		m.Status = "config panel"
-		return true
+		return true, nil
 	default:
-		return false
+		return false, nil
 	}
 }
 
@@ -525,10 +566,12 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		return m, m.sendMessageCmd(text)
 	case menuActionFriends:
 		m.panel = PanelFriends
-		m.Status = "friends panel"
+		m.Status = "loading friends"
+		return m, m.loadFriendsCmd()
 	case menuActionMembers:
 		m.panel = PanelMembers
-		m.Status = "members panel"
+		m.Status = "loading members"
+		return m, m.loadMembersCmd()
 	case menuActionConfig:
 		if m.Mode == ModeChat {
 			m.panel = PanelConfig
@@ -547,11 +590,15 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		m.syncNavCursorToCurrentHive()
 		m.Status = "select hive with Up/Down, Enter"
 	case menuActionRefreshChannels:
-		m.Status = "refresh channels pending"
+		if m.State.CurrentHiveID == 0 {
+			m.Status = "no hive selected"
+			return m, nil
+		}
+		return m, m.openHiveCmd(m.State.CurrentHiveID, m.currentHiveName())
 	case menuActionLogin:
 		return m, m.loginCmd()
 	case menuActionRegister:
-		m.Status = "register API not connected"
+		return m, m.registerCmd()
 	case menuActionQuit:
 		return m, tea.Quit
 	}
@@ -870,6 +917,22 @@ func (m Model) currentChannel() (model.Channel, bool) {
 		}
 	}
 	return model.Channel{}, false
+}
+
+func (m *Model) ensureCommandChannel(channelID int64, channelName string) {
+	if channelID == 0 || strings.TrimSpace(channelName) == "" {
+		return
+	}
+	for _, channel := range m.State.Channels {
+		if channel.ID == channelID {
+			return
+		}
+	}
+	m.State.Channels = append(m.State.Channels, model.Channel{
+		ID:   channelID,
+		Type: "TEXT",
+		Name: channelName,
+	})
 }
 
 func (m Model) currentChannelName() string {
@@ -1402,9 +1465,17 @@ func (m Model) panelContentLines(height, width int) []string {
 			fmt.Sprintf("server_url  %s", m.Deps.Config.RawHost),
 			fmt.Sprintf("REST        %s", m.Deps.Config.RESTBase),
 			fmt.Sprintf("WS          %s", m.Deps.Config.WSBase),
-			mutedStyle.Render("远程设置接口未接入"),
+			mutedStyle.Render("配置文件: tui/config.toml"),
 			mutedStyle.Render("Esc close"),
 		}
+	case PanelCommand:
+		title := m.panelTitle
+		if title == "" {
+			title = "Command"
+		}
+		lines = []string{"", accentStyle.Render(title)}
+		lines = append(lines, m.panelDataLines...)
+		lines = append(lines, "", mutedStyle.Render("Esc close"))
 	default:
 		return nil
 	}

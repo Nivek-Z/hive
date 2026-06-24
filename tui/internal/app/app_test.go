@@ -60,7 +60,10 @@ func TestLoginViewUsesTerminalThemeAndFocusedField(t *testing.T) {
 }
 
 func TestLoginMenuIncludesRegister(t *testing.T) {
-	m := app.NewModel(app.Dependencies{})
+	api := &fullFakeAPI{fakeAPI: fakeAPI{}}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Username = "nivek"
+	m.Password = "123456"
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	menu := updated.(app.Model).View()
@@ -71,10 +74,14 @@ func TestLoginMenuIncludesRegister(t *testing.T) {
 	}
 
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected register command")
+	}
+	updated, _ = updated.Update(cmd())
 	view := updated.(app.Model).View()
-	if !strings.Contains(view, "register API not connected") {
-		t.Fatalf("expected register placeholder feedback:\n%s", view)
+	if !strings.Contains(view, "registered nivek") || !contains(api.calls, "register:nivek") {
+		t.Fatalf("expected register feedback:\n%s\ncalls=%#v", view, api.calls)
 	}
 }
 
@@ -524,20 +531,30 @@ func TestMessagesRenderReplyReactionAndReadableNow(t *testing.T) {
 }
 
 func TestPlaceholderPanelsOpenAndClose(t *testing.T) {
-	m := app.NewModel(app.Dependencies{})
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{},
+		friends: []model.Friend{{UserID: 8, Username: "zkw", Nickname: "zkw"}},
+		members: []model.Member{{UserID: 9, Username: "nivek", Nickname: "nivek", Owner: true}},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
 	m.Mode = app.ModeChat
 	m.Focus = app.FocusMessages
 	m.State = app.State{
+		CurrentHiveID:    1,
 		CurrentChannelID: 2,
 		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
 		Unreads:          map[int64]int{},
 	}
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	if cmd == nil {
+		t.Fatal("expected friends loading command")
+	}
+	updated, _ = updated.Update(cmd())
 	friends := updated.(app.Model).View()
-	if !strings.Contains(friends, "Friends") || !strings.Contains(friends, "接口未接入") {
-		t.Fatalf("expected friends placeholder:\n%s", friends)
+	if !strings.Contains(friends, "Friends") || !strings.Contains(friends, "zkw") || strings.Contains(friends, "接口未接入") {
+		t.Fatalf("expected loaded friends panel:\n%s", friends)
 	}
 
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -546,16 +563,101 @@ func TestPlaceholderPanelsOpenAndClose(t *testing.T) {
 		t.Fatalf("panel should close on Esc:\n%s", closed)
 	}
 
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if cmd == nil {
+		t.Fatal("expected members loading command")
+	}
+	updated, _ = updated.Update(cmd())
 	members := updated.(app.Model).View()
-	if !strings.Contains(members, "Members") || !strings.Contains(members, "接口未接入") {
-		t.Fatalf("expected members placeholder:\n%s", members)
+	if !strings.Contains(members, "Members") || !strings.Contains(members, "nivek") || strings.Contains(members, "接口未接入") {
+		t.Fatalf("expected loaded members panel:\n%s", members)
 	}
 
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(",")})
 	config := updated.(app.Model).View()
-	if !strings.Contains(config, "Config") || !strings.Contains(config, "接口未接入") {
-		t.Fatalf("expected config placeholder:\n%s", config)
+	if !strings.Contains(config, "Config") || !strings.Contains(config, "server_url") {
+		t.Fatalf("expected config panel:\n%s", config)
+	}
+}
+
+func TestSlashHelpListsBackendCommands(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+	m.Input = "/help"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected help command")
+	}
+	updated, _ = updated.Update(cmd())
+	view := updated.(app.Model).View()
+
+	for _, want := range []string{"/hive create", "/member mute", "/role create", "/upload", "/konami"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in slash help:\n%s", want, view)
+		}
+	}
+}
+
+func TestSlashCommandsCallBackendAPIs(t *testing.T) {
+	api := &fullFakeAPI{fakeAPI: fakeAPI{}}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	for _, input := range []string{"/friend add zkw", "/invite create 0 24", "/react 10 😀", "/dm open 9", "/stats"} {
+		m.Input = input
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil {
+			t.Fatalf("expected command for %q", input)
+		}
+		updated, _ = updated.Update(cmd())
+		m = updated.(app.Model)
+	}
+
+	for _, want := range []string{"friend:add:zkw", "invite:create:1:0:24", "react:10:😀", "dm:open:9", "stats:1"} {
+		if !contains(api.calls, want) {
+			t.Fatalf("expected call %q in %#v", want, api.calls)
+		}
+	}
+}
+
+func TestDMCommandAddsSyntheticChannelHeader(t *testing.T) {
+	api := &fullFakeAPI{fakeAPI: fakeAPI{}}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+	m.Input = "/dm open 9"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected dm command")
+	}
+	updated, _ = updated.Update(cmd())
+	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	view := updated.(app.Model).View()
+
+	if !strings.Contains(view, "#dm") || !contains(api.calls, "dm:open:9") {
+		t.Fatalf("expected dm channel header:\n%s\ncalls=%#v", view, api.calls)
 	}
 }
 
@@ -602,11 +704,54 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 	}
 }
 
+func TestNavMenuRefreshesCurrentHive(t *testing.T) {
+	api := &fakeAPI{
+		detailsByHive: map[int64]model.HiveDetail{
+			7: {
+				ID:   7,
+				Name: "fgm",
+				Channels: []model.Channel{
+					{ID: 9, HiveID: 7, Type: "TEXT", Name: "fresh", Position: 1},
+				},
+			},
+		},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusNav
+	m.State = app.State{
+		CurrentHiveID:    7,
+		Hives:            []model.Hive{{ID: 7, Name: "fgm"}},
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, HiveID: 7, Type: "TEXT", Name: "old", Position: 1}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected refresh command")
+	}
+	updated, _ = updated.Update(cmd())
+	next := updated.(app.Model)
+
+	if next.State.CurrentChannelID != 9 || len(next.State.Channels) != 1 || next.State.Channels[0].Name != "fresh" {
+		t.Fatalf("expected refreshed channels, got %#v", next.State)
+	}
+}
+
 func TestTabMenuMovesSelectionAndExecutesWithEnter(t *testing.T) {
-	m := app.NewModel(app.Dependencies{})
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{},
+		members: []model.Member{{UserID: 9, Username: "nivek", Nickname: "nivek", Owner: true}},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
 	m.Mode = app.ModeChat
 	m.Focus = app.FocusComposer
 	m.State = app.State{
+		CurrentHiveID:    1,
 		CurrentChannelID: 2,
 		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
 		Unreads:          map[int64]int{},
@@ -621,10 +766,14 @@ func TestTabMenuMovesSelectionAndExecutesWithEnter(t *testing.T) {
 		t.Fatalf("expected menu cursor on members:\n%s", menu)
 	}
 
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected members loading command")
+	}
+	updated, _ = updated.Update(cmd())
 	view := updated.(app.Model).View()
-	if !strings.Contains(view, "Members") || !strings.Contains(view, "接口未接入") {
-		t.Fatalf("expected members panel after menu selection:\n%s", view)
+	if !strings.Contains(view, "Members") || !strings.Contains(view, "nivek") || strings.Contains(view, "API client") {
+		t.Fatalf("expected loaded members panel after menu selection:\n%s", view)
 	}
 }
 
@@ -865,6 +1014,238 @@ func (f *fakeAPI) Messages(_ context.Context, channelID int64, _ int) ([]model.M
 func (f *fakeAPI) MarkRead(_ context.Context, _ int64, messageID int64) error {
 	f.readMessageIDs = append(f.readMessageIDs, messageID)
 	return nil
+}
+
+type fullFakeAPI struct {
+	fakeAPI
+	friends []model.Friend
+	members []model.Member
+	calls   []string
+}
+
+func (f *fullFakeAPI) Register(_ context.Context, username, _ string, nickname string) (model.LoginResp, error) {
+	f.calls = append(f.calls, "register:"+username)
+	return model.LoginResp{Token: "jwt", User: model.User{ID: 1, Username: username, Nickname: nickname}}, nil
+}
+
+func (f *fullFakeAPI) Me(context.Context) (model.User, error) {
+	return model.User{ID: 1, Username: "nivek", Nickname: "nivek"}, nil
+}
+
+func (f *fullFakeAPI) UpdateProfile(_ context.Context, nickname, bio, color string) (model.User, error) {
+	f.calls = append(f.calls, "profile:"+nickname+":"+color)
+	return model.User{ID: 1, Username: "nivek", Nickname: nickname, Bio: bio, AvatarColor: color}, nil
+}
+
+func (f *fullFakeAPI) ChangePassword(context.Context, string, string) error {
+	f.calls = append(f.calls, "password")
+	return nil
+}
+
+func (f *fullFakeAPI) User(_ context.Context, id int64) (model.User, error) {
+	return model.User{ID: id, Username: fmt.Sprintf("user%d", id), Nickname: fmt.Sprintf("User %d", id)}, nil
+}
+
+func (f *fullFakeAPI) CreateHive(_ context.Context, req model.HiveReq) (model.HiveDetail, error) {
+	f.calls = append(f.calls, "hive:create:"+req.Name)
+	return model.HiveDetail{ID: 11, Name: req.Name, Description: req.Description, IconColor: req.IconColor}, nil
+}
+
+func (f *fullFakeAPI) UpdateHive(_ context.Context, hiveID int64, req model.HiveReq) (model.Hive, error) {
+	f.calls = append(f.calls, fmt.Sprintf("hive:update:%d", hiveID))
+	return model.Hive{ID: hiveID, Name: req.Name, Description: req.Description, IconColor: req.IconColor}, nil
+}
+
+func (f *fullFakeAPI) DeleteHive(_ context.Context, hiveID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("hive:delete:%d", hiveID))
+	return nil
+}
+
+func (f *fullFakeAPI) LeaveHive(_ context.Context, hiveID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("hive:leave:%d", hiveID))
+	return nil
+}
+
+func (f *fullFakeAPI) Members(_ context.Context, hiveID int64) ([]model.Member, error) {
+	f.calls = append(f.calls, fmt.Sprintf("members:%d", hiveID))
+	if f.members != nil {
+		return append([]model.Member(nil), f.members...), nil
+	}
+	return []model.Member{{UserID: 1, Username: "nivek", Nickname: "nivek", Owner: true}}, nil
+}
+
+func (f *fullFakeAPI) KickMember(_ context.Context, hiveID, userID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("member:kick:%d:%d", hiveID, userID))
+	return nil
+}
+
+func (f *fullFakeAPI) MuteMember(_ context.Context, hiveID, userID int64, minutes int) error {
+	f.calls = append(f.calls, fmt.Sprintf("member:mute:%d:%d:%d", hiveID, userID, minutes))
+	return nil
+}
+
+func (f *fullFakeAPI) UnmuteMember(_ context.Context, hiveID, userID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("member:unmute:%d:%d", hiveID, userID))
+	return nil
+}
+
+func (f *fullFakeAPI) CreateInvite(_ context.Context, hiveID int64, maxUses, expiresHours int) (model.Invite, error) {
+	f.calls = append(f.calls, fmt.Sprintf("invite:create:%d:%d:%d", hiveID, maxUses, expiresHours))
+	return model.Invite{Code: "invite-code", MaxUses: maxUses, UsedCount: 0}, nil
+}
+
+func (f *fullFakeAPI) Invites(_ context.Context, hiveID int64) ([]model.Invite, error) {
+	f.calls = append(f.calls, fmt.Sprintf("invites:%d", hiveID))
+	return []model.Invite{{Code: "invite-code", MaxUses: 3, UsedCount: 1, ExpiresAt: "2026-06-25T00:00:00Z"}}, nil
+}
+
+func (f *fullFakeAPI) JoinInvite(_ context.Context, code string) (model.Hive, error) {
+	f.calls = append(f.calls, "join:"+code)
+	return model.Hive{ID: 12, Name: "Joined"}, nil
+}
+
+func (f *fullFakeAPI) CreateChannel(_ context.Context, hiveID int64, req model.CreateChannelReq) (model.Channel, error) {
+	f.calls = append(f.calls, fmt.Sprintf("channel:create:%d:%s", hiveID, req.Name))
+	return model.Channel{ID: 21, HiveID: hiveID, Name: req.Name, Type: req.Type, Topic: req.Topic, ParentID: req.ParentID}, nil
+}
+
+func (f *fullFakeAPI) UpdateChannel(_ context.Context, channelID int64, req model.UpdateChannelReq) (model.Channel, error) {
+	f.calls = append(f.calls, fmt.Sprintf("channel:update:%d", channelID))
+	return model.Channel{ID: channelID, Name: req.Name, Type: "TEXT", Topic: req.Topic, Position: req.Position}, nil
+}
+
+func (f *fullFakeAPI) DeleteChannel(_ context.Context, channelID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("channel:delete:%d", channelID))
+	return nil
+}
+
+func (f *fullFakeAPI) MessagesBefore(ctx context.Context, channelID, _ int64, limit int) ([]model.Message, error) {
+	f.calls = append(f.calls, fmt.Sprintf("messages:%d:%d", channelID, limit))
+	return f.Messages(ctx, channelID, limit)
+}
+
+func (f *fullFakeAPI) DeleteMessage(_ context.Context, messageID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("message:delete:%d", messageID))
+	return nil
+}
+
+func (f *fullFakeAPI) AddReaction(_ context.Context, messageID int64, emoji string) ([]model.Reaction, error) {
+	f.calls = append(f.calls, fmt.Sprintf("react:%d:%s", messageID, emoji))
+	return []model.Reaction{{Emoji: emoji, Count: 1}}, nil
+}
+
+func (f *fullFakeAPI) RemoveReaction(_ context.Context, messageID int64, emoji string) ([]model.Reaction, error) {
+	f.calls = append(f.calls, fmt.Sprintf("unreact:%d:%s", messageID, emoji))
+	return []model.Reaction{}, nil
+}
+
+func (f *fullFakeAPI) Friends(context.Context) ([]model.Friend, error) {
+	f.calls = append(f.calls, "friends")
+	if f.friends != nil {
+		return append([]model.Friend(nil), f.friends...), nil
+	}
+	return []model.Friend{{UserID: 8, Username: "zkw", Nickname: "zkw"}}, nil
+}
+
+func (f *fullFakeAPI) SendFriendRequest(_ context.Context, username string) error {
+	f.calls = append(f.calls, "friend:add:"+username)
+	return nil
+}
+
+func (f *fullFakeAPI) FriendRequests(context.Context) ([]model.FriendRequest, error) {
+	return []model.FriendRequest{{ID: 31, UserID: 8, Username: "zkw", Nickname: "zkw"}}, nil
+}
+
+func (f *fullFakeAPI) AcceptFriendRequest(_ context.Context, requestID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("request:accept:%d", requestID))
+	return nil
+}
+
+func (f *fullFakeAPI) DeclineFriendRequest(_ context.Context, requestID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("request:decline:%d", requestID))
+	return nil
+}
+
+func (f *fullFakeAPI) RemoveFriend(_ context.Context, userID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("friend:remove:%d", userID))
+	return nil
+}
+
+func (f *fullFakeAPI) OpenDM(_ context.Context, userID int64) (model.OpenDMResp, error) {
+	f.calls = append(f.calls, fmt.Sprintf("dm:open:%d", userID))
+	return model.OpenDMResp{ChannelID: 44}, nil
+}
+
+func (f *fullFakeAPI) DMs(context.Context) ([]model.DM, error) {
+	f.calls = append(f.calls, "dms")
+	return []model.DM{{ChannelID: 44, UserID: 9, Username: "zkw", Nickname: "zkw", LastContent: "hi", Unread: 1}}, nil
+}
+
+func (f *fullFakeAPI) Roles(_ context.Context, hiveID int64) ([]model.Role, error) {
+	f.calls = append(f.calls, fmt.Sprintf("roles:%d", hiveID))
+	return []model.Role{{ID: 5, Name: "admin", Color: "#ffb300", Permissions: 7}}, nil
+}
+
+func (f *fullFakeAPI) CreateRole(_ context.Context, hiveID int64, req model.RoleReq) (model.Role, error) {
+	f.calls = append(f.calls, fmt.Sprintf("role:create:%d:%s", hiveID, req.Name))
+	return model.Role{ID: 6, Name: req.Name, Color: req.Color, Permissions: req.Permissions}, nil
+}
+
+func (f *fullFakeAPI) UpdateRole(_ context.Context, roleID int64, req model.RoleReq) (model.Role, error) {
+	f.calls = append(f.calls, fmt.Sprintf("role:update:%d", roleID))
+	return model.Role{ID: roleID, Name: req.Name, Color: req.Color, Permissions: req.Permissions}, nil
+}
+
+func (f *fullFakeAPI) DeleteRole(_ context.Context, roleID int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("role:delete:%d", roleID))
+	return nil
+}
+
+func (f *fullFakeAPI) AssignRoles(_ context.Context, hiveID, userID int64, roleIDs []int64) error {
+	f.calls = append(f.calls, fmt.Sprintf("member:roles:%d:%d:%v", hiveID, userID, roleIDs))
+	return nil
+}
+
+func (f *fullFakeAPI) UploadFile(_ context.Context, path string) (model.File, error) {
+	f.calls = append(f.calls, "upload:"+path)
+	return model.File{URL: "/uploads/test.png", OriginalName: "test.png", Size: 123}, nil
+}
+
+func (f *fullFakeAPI) Achievements(context.Context) ([]model.Achievement, error) {
+	f.calls = append(f.calls, "achievements")
+	return []model.Achievement{{ID: 1, Name: "First", Description: "first message", Emoji: "*", Points: 5}}, nil
+}
+
+func (f *fullFakeAPI) Heatmap(context.Context) ([]model.HeatRow, error) {
+	f.calls = append(f.calls, "heatmap")
+	return []model.HeatRow{{Date: "2026-06-24", Count: 3}}, nil
+}
+
+func (f *fullFakeAPI) SearchMessages(_ context.Context, hiveID int64, query string) ([]model.SearchHit, error) {
+	f.calls = append(f.calls, fmt.Sprintf("search:%d:%s", hiveID, query))
+	return []model.SearchHit{{ID: 1, ChannelID: 2, ChannelName: "Lobby", SenderNickname: "nivek", Content: query}}, nil
+}
+
+func (f *fullFakeAPI) HiveStats(_ context.Context, hiveID int64) (model.HiveStats, error) {
+	f.calls = append(f.calls, fmt.Sprintf("stats:%d", hiveID))
+	return model.HiveStats{
+		Daily:       []model.HeatRow{{Date: "2026-06-24", Count: 4}},
+		TopSpeakers: []model.NameCount{{Name: "nivek", Count: 4}},
+	}, nil
+}
+
+func (f *fullFakeAPI) Konami(context.Context) error {
+	f.calls = append(f.calls, "konami")
+	return nil
+}
+
+func contains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 type fakeWS struct{}
