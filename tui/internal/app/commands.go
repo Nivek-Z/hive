@@ -94,7 +94,7 @@ func (m Model) loadFriendsCmd() tea.Cmd {
 			name := displayName(request.Nickname, request.Username)
 			actions = append(actions, panelAction{
 				Label: fmt.Sprintf("request #%d  %s  @%s", request.ID, name, request.Username),
-				Hint:  "Enter accept",
+				Hint:  "接受",
 				Kind:  panelActionAcceptRequest,
 				ID:    request.ID,
 				Name:  name,
@@ -104,7 +104,7 @@ func (m Model) loadFriendsCmd() tea.Cmd {
 			name := displayName(friend.Nickname, friend.Username)
 			actions = append(actions, panelAction{
 				Label: fmt.Sprintf("#%d  %s  @%s", friend.UserID, name, friend.Username),
-				Hint:  "Enter open DM",
+				Hint:  "打开私聊",
 				Kind:  panelActionOpenDM,
 				ID:    friend.UserID,
 				Name:  "dm-" + name,
@@ -716,7 +716,7 @@ func (m Model) dmsResult(api commandAPI) commandResultMsg {
 		name := "dm-" + displayName(dm.Nickname, dm.Username)
 		actions = append(actions, panelAction{
 			Label: fmt.Sprintf("channel #%d  %s  unread %d  %s", dm.ChannelID, displayName(dm.Nickname, dm.Username), dm.Unread, emptyDash(dm.LastContent)),
-			Hint:  "Enter open",
+			Hint:  "打开",
 			Kind:  panelActionOpenDMChannel,
 			ID:    dm.ChannelID,
 			Name:  name,

@@ -35,7 +35,7 @@ func TestLoginViewRendersFramedPanel(t *testing.T) {
 
 	view := m.View()
 
-	for _, want := range []string{"+", "| Hive TUI", "terminal chat client", "Tab menu", "server localhost:8080"} {
+	for _, want := range []string{"+", "| Hive TUI", "terminal chat client", "Tab 菜单", "server localhost:8080"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected %q in framed login view:\n%s", want, view)
 		}
@@ -67,7 +67,7 @@ func TestLoginMenuIncludesRegister(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	menu := updated.(app.Model).View()
-	for _, want := range []string{"LOGIN MENU", "登录", "注册", "服务器设置"} {
+	for _, want := range []string{"登录操作", "登录", "注册", "服务器设置"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("expected %q in login menu:\n%s", want, menu)
 		}
@@ -401,7 +401,7 @@ func TestChatViewUsesColumnBordersAndFramedMenu(t *testing.T) {
 
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab})
 	menu := updated.(app.Model).View()
-	for _, want := range []string{"+", "COMPOSER MENU", "> 发送消息"} {
+	for _, want := range []string{"+", "消息操作", "> 切换群聊"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("expected %q in framed menu:\n%s", want, menu)
 		}
@@ -458,7 +458,6 @@ func TestComposerMenuCanJumpToHiveSelection(t *testing.T) {
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	next := updated.(app.Model)
 
@@ -466,7 +465,7 @@ func TestComposerMenuCanJumpToHiveSelection(t *testing.T) {
 		t.Fatalf("expected composer menu to focus nav, got %#v", next.Focus)
 	}
 	view := next.View()
-	for _, want := range []string{"> fgm", "select hive with Up/Down, Enter"} {
+	for _, want := range []string{"> fgm", "选择群聊后按 Enter"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected %q after menu hive jump:\n%s", want, view)
 		}
@@ -725,7 +724,7 @@ func TestFriendsPanelEnterOpensSelectedDM(t *testing.T) {
 	}
 	updated, _ = updated.Update(cmd())
 	friendsView := updated.(app.Model).View()
-	if !strings.Contains(friendsView, "Enter open DM") {
+	if !strings.Contains(friendsView, "打开私聊") {
 		t.Fatalf("expected actionable friends panel:\n%s", friendsView)
 	}
 
@@ -761,7 +760,7 @@ func TestDMSPanelShortcutOpensSelectedConversation(t *testing.T) {
 	}
 	updated, _ = updated.Update(cmd())
 	dmsView := updated.(app.Model).View()
-	if !strings.Contains(dmsView, "DMs") || !strings.Contains(dmsView, "Enter open") {
+	if !strings.Contains(dmsView, "DMs") || !strings.Contains(dmsView, "打开") {
 		t.Fatalf("expected actionable DMs panel:\n%s", dmsView)
 	}
 
@@ -815,7 +814,7 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	composerMenu := updated.(app.Model).View()
-	for _, want := range []string{"COMPOSER MENU", "发送消息", "好友", "在线成员", "设置"} {
+	for _, want := range []string{"消息操作", "切换群聊", "好友", "在线成员", "设置"} {
 		if !strings.Contains(composerMenu, want) {
 			t.Fatalf("expected %q in composer menu:\n%s", want, composerMenu)
 		}
@@ -823,14 +822,14 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	closed := updated.(app.Model).View()
-	if strings.Contains(closed, "COMPOSER MENU") {
+	if strings.Contains(closed, "消息操作") {
 		t.Fatalf("Esc should close menu:\n%s", closed)
 	}
 
 	m.Focus = app.FocusMessages
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	messagesMenu := updated.(app.Model).View()
-	for _, want := range []string{"MESSAGES MENU", "跳到最新", "成员列表"} {
+	for _, want := range []string{"聊天记录", "跳到最新", "成员列表"} {
 		if !strings.Contains(messagesMenu, want) {
 			t.Fatalf("expected %q in messages menu:\n%s", want, messagesMenu)
 		}
@@ -839,7 +838,7 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 	m.Focus = app.FocusNav
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	navMenu := updated.(app.Model).View()
-	for _, want := range []string{"NAV MENU", "打开/收放", "切换群聊"} {
+	for _, want := range []string{"频道列表", "打开/收放", "切换群聊"} {
 		if !strings.Contains(navMenu, want) {
 			t.Fatalf("expected %q in nav menu:\n%s", want, navMenu)
 		}
@@ -902,7 +901,6 @@ func TestTabMenuMovesSelectionAndExecutesWithEnter(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	menu := updated.(app.Model).View()
 	if !strings.Contains(menu, "> 在线成员") {
 		t.Fatalf("expected menu cursor on members:\n%s", menu)
@@ -954,7 +952,7 @@ func TestComposerShowsChannelPlaceholder(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 8})
 	view := updated.(app.Model).View()
 
-	if !strings.Contains(view, "> message #Lobby") {
+	if !strings.Contains(view, "> 输入 #Lobby") {
 		t.Fatalf("expected composer placeholder:\n%s", view)
 	}
 }
@@ -972,8 +970,34 @@ func TestStatusLineAdvertisesTabMenu(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 90, Height: 8})
 	view := updated.(app.Model).View()
 
-	if !strings.Contains(view, "Tab menu") || strings.Contains(view, "F friends | M members | , config") {
+	if !strings.Contains(view, "输入消息") || !strings.Contains(view, "Tab 更多") || strings.Contains(view, "COMPOSER") || strings.Contains(view, "F friends | M members | , config") {
 		t.Fatalf("expected compact Tab menu hint:\n%s", view)
+	}
+}
+
+func TestEmptyComposerEnterOpensActionMenu(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("empty enter should only open menu")
+	}
+	view := updated.(app.Model).View()
+
+	for _, want := range []string{"消息操作", "> 切换群聊", "Enter 执行"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q after empty Enter:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "> 发送消息") {
+		t.Fatalf("empty composer menu should not default to send:\n%s", view)
 	}
 }
 

@@ -352,7 +352,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		if m.menuOpen {
 			m.menuOpen = false
-			m.Status = "menu closed"
+			m.Status = "已关闭菜单"
 			return m, nil
 		}
 		if m.Mode == ModeChat {
@@ -360,7 +360,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.panel = PanelNone
 				m.panelActions = nil
 				m.panelCursor = 0
-				m.Status = "panel closed"
+				m.Status = "已返回聊天"
 				return m, nil
 			}
 			m.Focus = FocusNav
@@ -466,7 +466,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.messageScroll = 0
-				m.Status = "loading hive " + name
+				m.Status = "正在打开群聊 " + name
 				return m, m.openHiveCmd(row.Hive.ID, name)
 			}
 			if row.Channel.Type == "CATEGORY" {
@@ -484,7 +484,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 				m.State.SelectChannel(row.Channel.ID)
 				m.messageScroll = 0
 				m.Focus = FocusComposer
-				m.Status = "loading #" + row.Channel.Name
+				m.Status = "正在打开 #" + row.Channel.Name
 				return m, m.openChannelCmd(row.Channel.ID, row.Channel.Name)
 			}
 		}
@@ -497,6 +497,10 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.Focus == FocusComposer {
 		text := strings.TrimSpace(m.Input)
 		if text == "" {
+			m.menuOpen = true
+			m.menuCursor = 0
+			m.panel = PanelNone
+			m.Status = "选择下一步操作"
 			return m, nil
 		}
 		m.Input = ""
@@ -545,25 +549,25 @@ func (m *Model) openPanelShortcut(s string) (bool, tea.Cmd) {
 	case "f":
 		m.panel = PanelFriends
 		m.clearPanelActions()
-		m.Status = "loading friends"
+		m.Status = "正在加载好友"
 		return true, m.loadFriendsCmd()
 	case "d":
 		m.panel = PanelCommand
-		m.Status = "loading dms"
+		m.Status = "正在加载私聊"
 		return true, m.loadDMsCmd()
 	case "r":
 		m.panel = PanelCommand
-		m.Status = "loading roles"
+		m.Status = "正在加载角色权限"
 		return true, m.loadRolesCmd()
 	case "m":
 		m.panel = PanelMembers
 		m.clearPanelActions()
-		m.Status = "loading members"
+		m.Status = "正在加载成员"
 		return true, m.loadMembersCmd()
 	case ",":
 		m.panel = PanelConfig
 		m.clearPanelActions()
-		m.Status = "config panel"
+		m.Status = "设置"
 		return true, nil
 	default:
 		return false, nil
@@ -651,7 +655,7 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		}
 		text := strings.TrimSpace(m.Input)
 		if text == "" {
-			m.Status = "nothing to send"
+			m.Status = "先输入消息"
 			return m, nil
 		}
 		m.Input = ""
@@ -659,39 +663,39 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 	case menuActionFriends:
 		m.panel = PanelFriends
 		m.clearPanelActions()
-		m.Status = "loading friends"
+		m.Status = "正在加载好友"
 		return m, m.loadFriendsCmd()
 	case menuActionDMs:
 		m.panel = PanelCommand
-		m.Status = "loading dms"
+		m.Status = "正在加载私聊"
 		return m, m.loadDMsCmd()
 	case menuActionMembers:
 		m.panel = PanelMembers
 		m.clearPanelActions()
-		m.Status = "loading members"
+		m.Status = "正在加载成员"
 		return m, m.loadMembersCmd()
 	case menuActionRoles:
 		m.panel = PanelCommand
-		m.Status = "loading roles"
+		m.Status = "正在加载角色权限"
 		return m, m.loadRolesCmd()
 	case menuActionConfig:
 		if m.Mode == ModeChat {
 			m.panel = PanelConfig
 			m.clearPanelActions()
-			m.Status = "config panel"
+			m.Status = "设置"
 		} else {
 			m.Status = "server " + m.Deps.Config.RawHost
 		}
 	case menuActionJumpLatest:
 		m.messageScroll = 0
-		m.Status = "latest messages"
+		m.Status = "已跳到最新"
 	case menuActionNavOpen:
 		return m.handleEnter()
 	case menuActionSwitchHive:
 		m.Focus = FocusNav
 		m.panel = PanelNone
 		m.syncNavCursorToCurrentHive()
-		m.Status = "select hive with Up/Down, Enter"
+		m.Status = "选择群聊后按 Enter"
 	case menuActionRefreshChannels:
 		if m.State.CurrentHiveID == 0 {
 			m.Status = "no hive selected"
@@ -721,13 +725,13 @@ func (m Model) menuItems() []menuItem {
 	case FocusNav:
 		return []menuItem{
 			{Label: "打开/收放", Hint: "Enter", Action: menuActionNavOpen},
-			{Label: "切换群聊", Hint: "hives", Action: menuActionSwitchHive},
-			{Label: "刷新频道", Hint: "later", Action: menuActionRefreshChannels},
+			{Label: "切换群聊", Hint: "选择", Action: menuActionSwitchHive},
+			{Label: "刷新频道", Hint: "刷新", Action: menuActionRefreshChannels},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
 		}
 	case FocusMessages:
 		return []menuItem{
-			{Label: "跳到最新", Hint: "End", Action: menuActionJumpLatest},
+			{Label: "跳到最新", Hint: "最新", Action: menuActionJumpLatest},
 			{Label: "成员列表", Hint: "M", Action: menuActionMembers},
 			{Label: "角色权限", Hint: "R", Action: menuActionRoles},
 			{Label: "好友", Hint: "F", Action: menuActionFriends},
@@ -735,29 +739,33 @@ func (m Model) menuItems() []menuItem {
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
 		}
 	default:
-		return []menuItem{
-			{Label: "发送消息", Hint: "Enter", Action: menuActionSend},
-			{Label: "切换群聊", Hint: "hives", Action: menuActionSwitchHive},
+		items := []menuItem{}
+		if strings.TrimSpace(m.Input) != "" {
+			items = append(items, menuItem{Label: "发送消息", Hint: "Enter", Action: menuActionSend})
+		}
+		items = append(items, []menuItem{
+			{Label: "切换群聊", Hint: "选择", Action: menuActionSwitchHive},
 			{Label: "好友", Hint: "F", Action: menuActionFriends},
 			{Label: "在线成员", Hint: "M", Action: menuActionMembers},
 			{Label: "私聊", Hint: "D", Action: menuActionDMs},
 			{Label: "角色权限", Hint: "R", Action: menuActionRoles},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
-		}
+		}...)
+		return items
 	}
 }
 
 func (m Model) menuTitle() string {
 	if m.Mode == ModeLogin {
-		return "LOGIN MENU"
+		return "登录操作"
 	}
 	switch m.Focus {
 	case FocusNav:
-		return "NAV MENU"
+		return "频道列表"
 	case FocusMessages:
-		return "MESSAGES MENU"
+		return "聊天记录"
 	default:
-		return "COMPOSER MENU"
+		return "消息操作"
 	}
 }
 
@@ -926,7 +934,7 @@ func (m Model) loginView() string {
 		loginFieldLine("Username", m.Username, m.Focus == FocusLoginUsername),
 		loginFieldLine("Password", strings.Repeat("*", len(m.Password)), m.Focus == FocusLoginPassword),
 		"",
-		mutedStyle.Render("Tab menu") + "  " + accentStyle.Render("Enter login") + "  " + mutedStyle.Render("Ctrl+C quit"),
+		mutedStyle.Render("Tab 菜单") + "  " + accentStyle.Render("Enter 登录") + "  " + mutedStyle.Render("Ctrl+C 退出"),
 		mutedStyle.Render("server " + m.Deps.Config.RawHost),
 	}
 	if m.menuOpen {
@@ -1251,7 +1259,7 @@ func (m Model) visibleMessageLines(height, width int) []string {
 	}
 	lines := m.messageLines(width)
 	if len(lines) == 0 {
-		return []string{"No messages"}
+		return []string{"暂无消息"}
 	}
 	scroll := min(m.messageScroll, max(0, len(lines)-height))
 	end := len(lines) - scroll
@@ -1538,7 +1546,7 @@ func (m Model) panelLines(height, width int) []string {
 		"",
 		accentStyle.Render(title),
 		mutedStyle.Render("接口未接入"),
-		mutedStyle.Render("Esc close"),
+		mutedStyle.Render("Esc 返回"),
 	}
 	if height <= 0 || len(lines) <= height {
 		return lines
@@ -1555,7 +1563,7 @@ func (m Model) panelContentLines(height, width int) []string {
 			accentStyle.Render("Friends 好友"),
 			mutedStyle.Render("接口未接入"),
 			mutedStyle.Render("等待后端提供好友接口"),
-			mutedStyle.Render("Esc close"),
+			mutedStyle.Render("Esc 返回"),
 		}
 	case PanelMembers:
 		lines = []string{
@@ -1563,7 +1571,7 @@ func (m Model) panelContentLines(height, width int) []string {
 			accentStyle.Render("Members 在线成员"),
 			mutedStyle.Render("接口未接入"),
 			mutedStyle.Render("等待后端提供在线成员接口"),
-			mutedStyle.Render("Esc close"),
+			mutedStyle.Render("Esc 返回"),
 		}
 	case PanelConfig:
 		lines = []string{
@@ -1573,7 +1581,7 @@ func (m Model) panelContentLines(height, width int) []string {
 			fmt.Sprintf("REST        %s", m.Deps.Config.RESTBase),
 			fmt.Sprintf("WS          %s", m.Deps.Config.WSBase),
 			mutedStyle.Render("配置文件: tui/config.toml"),
-			mutedStyle.Render("Esc close"),
+			mutedStyle.Render("Esc 返回"),
 		}
 	case PanelCommand:
 		title := m.panelTitle
@@ -1605,7 +1613,7 @@ func (m Model) panelContentLines(height, width int) []string {
 				lines = append(lines, line)
 			}
 		}
-		lines = append(lines, "", mutedStyle.Render("Esc close"))
+		lines = append(lines, "", mutedStyle.Render("Esc 返回"))
 	default:
 		return nil
 	}
@@ -1639,7 +1647,7 @@ func (m Model) menuContentLines(height, width int) []string {
 		}
 		lines = append(lines, line)
 	}
-	lines = append(lines, "", mutedStyle.Render("Esc close"))
+	lines = append(lines, "", mutedStyle.Render("Esc 返回"))
 	boxed := strings.Split(renderBox(lines, contentWidth), "\n")
 	if height <= 0 || len(boxed) <= height {
 		return boxed
@@ -1654,7 +1662,7 @@ func (m Model) composerLine(width int) string {
 	}
 	text := m.Input
 	if text == "" && m.Focus == FocusComposer {
-		text = "message #" + m.currentChannelName()
+		text = "输入 #" + m.currentChannelName()
 	}
 	line := prompt + " " + text
 	if m.Focus == FocusComposer {
@@ -1664,13 +1672,13 @@ func (m Model) composerLine(width int) string {
 }
 
 func (m Model) statusLine(width int) string {
-	parts := []string{styleConnectionStatus(m.Status), accentStyle.Render(strings.ToUpper(focusName(m.Focus)))}
+	parts := []string{styleConnectionStatus(m.Status), accentStyle.Render(m.activityLabel())}
 	if m.menuOpen {
-		parts = append(parts, mutedStyle.Render("Up/Down choose"), mutedStyle.Render("Enter select"), mutedStyle.Render("Esc close"))
+		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Enter 执行"), mutedStyle.Render("Esc 返回"))
 	} else if m.panel != PanelNone && len(m.panelActions) > 0 {
-		parts = append(parts, mutedStyle.Render("Up/Down choose"), mutedStyle.Render("Enter select"), mutedStyle.Render("Esc close"))
+		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Enter 执行"), mutedStyle.Render("Esc 返回"))
 	} else {
-		parts = append(parts, mutedStyle.Render("Tab menu"), mutedStyle.Render("Enter"))
+		parts = append(parts, m.defaultActionHints()...)
 	}
 	if m.messageScroll > 0 {
 		parts = append(parts, mutedStyle.Render(fmt.Sprintf("scroll -%d", m.messageScroll)))
@@ -1679,6 +1687,60 @@ func (m Model) statusLine(width int) string {
 		parts = append(parts, primaryStyle.Render(m.Status))
 	}
 	return truncateCells(strings.Join(parts, " | "), width)
+}
+
+func (m Model) activityLabel() string {
+	if m.menuOpen {
+		return m.menuTitle()
+	}
+	if m.panel != PanelNone {
+		if strings.TrimSpace(m.panelTitle) != "" {
+			return m.panelTitle
+		}
+		switch m.panel {
+		case PanelFriends:
+			return "好友"
+		case PanelMembers:
+			return "成员"
+		case PanelConfig:
+			return "设置"
+		default:
+			return "面板"
+		}
+	}
+	switch m.Focus {
+	case FocusNav:
+		return "频道列表"
+	case FocusMessages:
+		return "聊天记录"
+	case FocusComposer:
+		if strings.HasPrefix(strings.TrimSpace(m.Input), "/") {
+			return "输入命令"
+		}
+		if strings.TrimSpace(m.Input) != "" {
+			return "正在输入"
+		}
+		return "输入消息"
+	case FocusLoginUsername, FocusLoginPassword:
+		return "登录"
+	default:
+		return "聊天"
+	}
+}
+
+func (m Model) defaultActionHints() []string {
+	switch {
+	case m.Focus == FocusNav:
+		return []string{mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Enter 打开"), mutedStyle.Render("→ 输入")}
+	case m.Focus == FocusMessages:
+		return []string{mutedStyle.Render("↑↓ 翻记录"), mutedStyle.Render("Enter 输入"), mutedStyle.Render("Tab 更多")}
+	case m.Focus == FocusComposer && strings.TrimSpace(m.Input) != "":
+		return []string{mutedStyle.Render("Enter 发送"), mutedStyle.Render("Tab 更多")}
+	case m.Focus == FocusComposer:
+		return []string{mutedStyle.Render("直接输入"), mutedStyle.Render("Enter 操作"), mutedStyle.Render("Tab 更多")}
+	default:
+		return []string{mutedStyle.Render("Tab 更多"), mutedStyle.Render("Enter")}
+	}
 }
 
 func styleConnectionStatus(status string) string {
