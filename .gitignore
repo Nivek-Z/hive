@@ -1,0 +1,29 @@
+# Local runtime data
+tools/
+data/
+uploads/
+logs/
+.worktrees/
+*.zip
+
+# Secrets
+.env
+
+# Build output
+hive/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Logs
+logs-app.txt
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
