@@ -21,7 +21,7 @@ class CommandServiceTest {
     @BeforeEach
     void setUp() {
         // 事件发布器用空实现：单测只关心命令解析逻辑
-        commands = new CommandService(event -> {
+        commands = new CommandServiceImpl(event -> {
         });
         user = new User();
         user.setId(42L);

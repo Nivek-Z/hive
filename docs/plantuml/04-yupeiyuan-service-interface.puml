@@ -1,0 +1,127 @@
+@startuml
+' 这张图是新增版本：虞沛远负责包的接口实现版，原 04-yupeiyuan-detail.puml 不修改
+!pragma layout smetana
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+hide empty members
+skinparam shadowing false
+skinparam class {
+  BackgroundColor<<Controller>> #E8F2FF
+  BackgroundColor<<ServiceInterface>> #FFF7D6
+  BackgroundColor<<ServiceImpl>> #E9F7EF
+  BackgroundColor<<Mapper>> #F5E8FF
+  BackgroundColor<<Entity>> #FFFFFF
+  BackgroundColor<<DTO>> #FFF1E6
+  BackgroundColor<<Infra>> #F2F2F2
+  BorderColor #555555
+}
+
+title 虞沛远 yupeiyuan：角色权限、好友私聊
+
+legend left
+  主功能：角色与权限校验，好友申请/通过/删除，私聊会话创建与列表
+  规范链路：Controller -> Service 接口 -> ServiceImpl -> Mapper / 跨组服务
+endlegend
+
+package "入口层 Controller" {
+  class FriendController <<Controller>>
+  class DmController <<Controller>>
+  class RoleController <<Controller>>
+}
+
+package "抽象服务接口" {
+  interface FriendService <<ServiceInterface>>
+  interface RoleService <<ServiceInterface>>
+  interface PermissionService <<ServiceInterface>>
+}
+
+package "服务实现" {
+  class FriendServiceImpl <<ServiceImpl>>
+  class RoleServiceImpl <<ServiceImpl>>
+  class PermissionServiceImpl <<ServiceImpl>>
+}
+
+package "数据访问 Mapper" {
+  interface FriendshipMapper <<Mapper>>
+  interface RoleMapper <<Mapper>>
+  interface MemberRoleMapper <<Mapper>>
+}
+
+package "领域实体" {
+  class Friendship <<Entity>>
+  class Role <<Entity>>
+  class MemberRole <<Entity>>
+  class Permissions <<DTO>>
+}
+
+package "请求与响应对象" {
+  class FriendRequestVO <<DTO>>
+  class FriendVO <<DTO>>
+  class DmVO <<DTO>>
+  class RoleReq <<DTO>>
+  class RoleVO <<DTO>>
+}
+
+package "跨组依赖，只展示调用边界" {
+  interface ChannelMapper <<Mapper>>
+  interface ChannelMemberMapper <<Mapper>>
+  interface HiveMapper <<Mapper>>
+  interface HiveMemberMapper <<Mapper>>
+  interface UserMapper <<Mapper>>
+  interface UserService <<ServiceInterface>>
+  class Channel <<Entity>>
+  class User <<Entity>>
+  class UserVO <<DTO>>
+  class WsPush <<Infra>>
+  class AppEvents <<Infra>>
+}
+
+FriendController --> FriendService : 好友申请/接受/删除/列表
+DmController --> FriendService : 私聊创建/列表
+RoleController --> RoleService : 角色增删改/成员绑定
+
+FriendServiceImpl ..|> FriendService : 实现
+RoleServiceImpl ..|> RoleService : 实现
+PermissionServiceImpl ..|> PermissionService : 实现
+
+FriendService --> FriendVO : 返回好友
+FriendService --> FriendRequestVO : 返回申请
+FriendService --> DmVO : 返回私聊
+RoleService --> RoleReq : 入参
+RoleService --> RoleVO : 返回角色
+PermissionService --> Permissions : 权限常量
+
+FriendServiceImpl --> FriendshipMapper : 好友关系持久化
+FriendServiceImpl --> ChannelMapper : 创建/查找私聊频道
+FriendServiceImpl --> ChannelMemberMapper : 私聊成员绑定
+FriendServiceImpl --> UserMapper : 查找用户
+FriendServiceImpl --> UserService : 组装用户资料
+FriendServiceImpl --> WsPush : 好友/私聊推送
+FriendServiceImpl ..> AppEvents : 发布好友通过事件
+RoleServiceImpl --> RoleMapper : 角色持久化
+RoleServiceImpl --> MemberRoleMapper : 成员角色绑定
+RoleServiceImpl --> PermissionService : 权限校验
+RoleServiceImpl --> WsPush : 角色变化推送
+PermissionServiceImpl --> HiveMapper : 蜂巢存在性
+PermissionServiceImpl --> HiveMemberMapper : 成员身份
+PermissionServiceImpl --> RoleMapper : 权限位查询
+
+FriendshipMapper --> Friendship : 持久化
+FriendshipMapper ..> FriendVO : 好友投影
+FriendshipMapper ..> FriendRequestVO : 申请投影
+RoleMapper --> Role : 持久化
+RoleMapper ..> RoleVO : 角色投影
+MemberRoleMapper --> MemberRole : 持久化
+ChannelMapper --> Channel : 私聊频道
+UserMapper --> User : 用户实体
+UserService --> UserVO : 用户展示
+
+FriendRequestVO <.. FriendController : 响应体
+FriendVO <.. FriendController : 响应体
+DmVO <.. DmController : 响应体
+RoleReq ..> RoleController : 请求体
+RoleVO <.. RoleController : 响应体
+
+@enduml

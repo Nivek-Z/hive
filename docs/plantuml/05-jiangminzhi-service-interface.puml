@@ -1,0 +1,146 @@
+@startuml
+' 这张图是新增版本：江民智负责包的接口实现版，原 05-jiangminzhi-detail.puml 不修改
+!pragma layout smetana
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+hide empty members
+skinparam shadowing false
+skinparam class {
+  BackgroundColor<<Controller>> #E8F2FF
+  BackgroundColor<<ServiceInterface>> #FFF7D6
+  BackgroundColor<<ServiceImpl>> #E9F7EF
+  BackgroundColor<<Mapper>> #F5E8FF
+  BackgroundColor<<Entity>> #FFFFFF
+  BackgroundColor<<DTO>> #FFF1E6
+  BackgroundColor<<Infra>> #F2F2F2
+  BorderColor #555555
+}
+
+title 江民智 jiangminzhi：用户认证、资料、成就系统、Web 配置
+
+legend left
+  主功能：注册登录，JWT 认证，用户资料，密码修改，成就统计与通知
+  规范链路：Controller -> Service 接口 -> ServiceImpl -> Mapper / 事件 / 推送
+endlegend
+
+package "入口层 Controller" {
+  class AuthController <<Controller>>
+  class UserController <<Controller>>
+  class AchievementController <<Controller>>
+}
+
+package "抽象服务接口" {
+  interface AuthService <<ServiceInterface>>
+  interface UserService <<ServiceInterface>>
+  interface AchievementService <<ServiceInterface>>
+}
+
+package "服务实现" {
+  class AuthServiceImpl <<ServiceImpl>>
+  class UserServiceImpl <<ServiceImpl>>
+  class AchievementServiceImpl <<ServiceImpl>>
+}
+
+package "数据访问 Mapper" {
+  interface UserMapper <<Mapper>>
+  interface AchievementMapper <<Mapper>>
+}
+
+package "领域实体" {
+  class User <<Entity>>
+}
+
+package "请求与响应对象" {
+  class RegisterReq <<DTO>>
+  class LoginReq <<DTO>>
+  class LoginResp <<DTO>>
+  class ChangePasswordReq <<DTO>>
+  class UpdateProfileReq <<DTO>>
+  class UserVO <<DTO>>
+  class AchievementVO <<DTO>>
+}
+
+package "认证与 Web 基础设施" {
+  class JwtUtil <<Infra>>
+  class AuthInterceptor <<Infra>>
+  class CurrentUidResolver <<Infra>>
+  class WebConfig <<Infra>>
+}
+
+package "应用事件" {
+  class AppEvents <<Infra>>
+  class MessageSent <<DTO>>
+  class ReactionAdded <<DTO>>
+  class FriendAccepted <<DTO>>
+  class HiveCreated <<DTO>>
+  class DiceRolled <<DTO>>
+  class UserLoggedIn <<DTO>>
+}
+
+package "跨组依赖，只展示调用边界" {
+  interface MessageMapper <<Mapper>>
+  interface ReactionMapper <<Mapper>>
+  interface FriendshipMapper <<Mapper>>
+  class WsPush <<Infra>>
+}
+
+AuthController --> AuthService : 注册/登录
+UserController --> UserService : 我的资料/修改资料/改密码
+AchievementController --> AchievementService : 成就查询
+
+AuthServiceImpl ..|> AuthService : 实现
+UserServiceImpl ..|> UserService : 实现
+AchievementServiceImpl ..|> AchievementService : 实现
+
+AuthService --> RegisterReq : 注册入参
+AuthService --> LoginReq : 登录入参
+AuthService --> LoginResp : 登录返回
+UserService --> UserVO : 返回用户
+UserService --> UpdateProfileReq : 更新入参
+UserService --> ChangePasswordReq : 改密入参
+AchievementService --> AchievementVO : 返回成就
+
+AuthServiceImpl --> UserMapper : 账号持久化
+AuthServiceImpl --> JwtUtil : 签发 token
+AuthServiceImpl ..> AppEvents : 发布登录事件
+UserServiceImpl --> UserMapper : 用户资料持久化
+AchievementServiceImpl --> AchievementMapper : 成就持久化
+AchievementServiceImpl --> MessageMapper : 消息统计
+AchievementServiceImpl --> ReactionMapper : 回应统计
+AchievementServiceImpl --> FriendshipMapper : 好友统计
+AchievementServiceImpl --> UserMapper : 用户校验
+AchievementServiceImpl --> WsPush : 成就通知
+
+UserMapper --> User : 持久化
+UserMapper ..> UserVO : 用户投影
+AchievementMapper ..> AchievementVO : 成就投影
+
+AuthInterceptor --> JwtUtil : 校验请求 token
+CurrentUidResolver --> AuthInterceptor : 读取当前用户
+WebConfig --> AuthInterceptor : 注册拦截器
+WebConfig --> CurrentUidResolver : 注册参数解析器
+
+AppEvents *-- MessageSent : 消息事件
+AppEvents *-- ReactionAdded : 回应事件
+AppEvents *-- FriendAccepted : 好友事件
+AppEvents *-- HiveCreated : 蜂巢事件
+AppEvents *-- DiceRolled : 命令事件
+AppEvents *-- UserLoggedIn : 登录事件
+AchievementServiceImpl ..> MessageSent : 监听并判定成就
+AchievementServiceImpl ..> ReactionAdded : 监听并判定成就
+AchievementServiceImpl ..> FriendAccepted : 监听并判定成就
+AchievementServiceImpl ..> HiveCreated : 监听并判定成就
+AchievementServiceImpl ..> DiceRolled : 监听并判定成就
+AchievementServiceImpl ..> UserLoggedIn : 监听并判定成就
+
+RegisterReq ..> AuthController : 请求体
+LoginReq ..> AuthController : 请求体
+LoginResp <.. AuthController : 响应体
+UpdateProfileReq ..> UserController : 请求体
+ChangePasswordReq ..> UserController : 请求体
+UserVO <.. UserController : 响应体
+AchievementVO <.. AchievementController : 响应体
+
+@enduml
