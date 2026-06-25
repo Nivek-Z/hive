@@ -86,6 +86,8 @@ const (
 	panelActionOpenDM panelActionKind = iota
 	panelActionOpenDMChannel
 	panelActionAcceptRequest
+	panelActionEditRole
+	panelActionAssignMemberRoles
 )
 
 type panelAction struct {
@@ -94,6 +96,19 @@ type panelAction struct {
 	Kind  panelActionKind
 	ID    int64
 	Name  string
+}
+
+type roleEditorState struct {
+	Role        model.Role
+	Permissions int64
+	Cursor      int
+}
+
+type memberRoleEditorState struct {
+	Member   model.Member
+	Roles    []model.Role
+	Selected map[int64]bool
+	Cursor   int
 }
 
 type Dependencies struct {
@@ -142,6 +157,10 @@ type Model struct {
 	panelDataLines []string
 	panelCursor    int
 	panelActions   []panelAction
+	panelRoles     []model.Role
+	panelMembers   []model.Member
+	roleEditor     *roleEditorState
+	memberEditor   *memberRoleEditorState
 }
 
 type incomingMessageMsg struct {
@@ -165,6 +184,8 @@ type commandResultMsg struct {
 	ChannelName string
 	Messages    []model.Message
 	Actions     []panelAction
+	Roles       []model.Role
+	Members     []model.Member
 }
 
 type channelLoadedMsg struct {
@@ -238,12 +259,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.State.Messages = msg.Messages
 			m.messageScroll = 0
 			m.Focus = FocusComposer
+			m.clearPanelEditors()
 		}
 		if msg.Title != "" || len(msg.Lines) > 0 {
 			m.panel = PanelCommand
 			m.panelTitle = msg.Title
 			m.panelDataLines = append([]string(nil), msg.Lines...)
 			m.panelActions = append([]panelAction(nil), msg.Actions...)
+			m.panelRoles = append([]model.Role(nil), msg.Roles...)
+			m.panelMembers = append([]model.Member(nil), msg.Members...)
+			m.clearPanelEditors()
 			m.panelCursor = 0
 		}
 		if msg.Status != "" {
@@ -273,6 +298,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.State.Messages = msg.Messages
 		m.messageScroll = 0
 		m.panel = PanelNone
+		m.clearPanelActions()
 		m.Status = "opened hive " + msg.HiveName
 		m.syncNavCursorToCurrent()
 		return m, nil
@@ -347,6 +373,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.menuCursor = 0
 		if m.menuOpen {
 			m.panel = PanelNone
+			m.clearPanelActions()
 		}
 		return m, nil
 	case tea.KeyEsc:
@@ -360,6 +387,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.panel = PanelNone
 				m.panelActions = nil
 				m.panelCursor = 0
+				m.clearPanelEditors()
 				m.Status = "已返回聊天"
 				return m, nil
 			}
@@ -387,6 +415,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveMenuCursor(-1)
 			return m, nil
 		}
+		if m.Mode == ModeChat && m.panelEditorActive() {
+			m.movePanelEditorCursor(-1)
+			return m, nil
+		}
 		if m.Mode == ModeChat && m.panel != PanelNone && len(m.panelActions) > 0 {
 			m.movePanelCursor(-1)
 			return m, nil
@@ -407,6 +439,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveMenuCursor(1)
 			return m, nil
 		}
+		if m.Mode == ModeChat && m.panelEditorActive() {
+			m.movePanelEditorCursor(1)
+			return m, nil
+		}
 		if m.Mode == ModeChat && m.panel != PanelNone && len(m.panelActions) > 0 {
 			m.movePanelCursor(1)
 			return m, nil
@@ -424,10 +460,21 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuOpen {
 			return m.executeMenuSelection()
 		}
+		if m.Mode == ModeChat && m.roleEditor != nil {
+			return m, m.saveRoleEditorCmd()
+		}
+		if m.Mode == ModeChat && m.memberEditor != nil {
+			return m, m.saveMemberRolesCmd()
+		}
 		if m.Mode == ModeChat && m.panel != PanelNone && len(m.panelActions) > 0 {
 			return m.executePanelAction()
 		}
 		return m.handleEnter()
+	case tea.KeySpace:
+		if m.Mode == ModeChat && m.panelEditorActive() {
+			m.togglePanelEditorSelection()
+		}
+		return m, nil
 	case tea.KeyBackspace:
 		if m.menuOpen {
 			return m, nil
@@ -435,6 +482,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBackspace(), nil
 	case tea.KeyRunes:
 		if m.menuOpen {
+			return m, nil
+		}
+		if msg.String() == " " && m.Mode == ModeChat && m.panelEditorActive() {
+			m.togglePanelEditorSelection()
 			return m, nil
 		}
 		next, cmd := m.handleRunes(msg.String())
@@ -553,10 +604,12 @@ func (m *Model) openPanelShortcut(s string) (bool, tea.Cmd) {
 		return true, m.loadFriendsCmd()
 	case "d":
 		m.panel = PanelCommand
+		m.clearPanelActions()
 		m.Status = "正在加载私聊"
 		return true, m.loadDMsCmd()
 	case "r":
 		m.panel = PanelCommand
+		m.clearPanelActions()
 		m.Status = "正在加载角色权限"
 		return true, m.loadRolesCmd()
 	case "m":
@@ -606,6 +659,12 @@ func (m *Model) movePanelCursor(delta int) {
 func (m *Model) clearPanelActions() {
 	m.panelActions = nil
 	m.panelCursor = 0
+	m.clearPanelEditors()
+}
+
+func (m *Model) clearPanelEditors() {
+	m.roleEditor = nil
+	m.memberEditor = nil
 }
 
 func (m Model) executePanelAction() (tea.Model, tea.Cmd) {
@@ -629,9 +688,216 @@ func (m Model) executePanelAction() (tea.Model, tea.Cmd) {
 	case panelActionAcceptRequest:
 		m.Status = "accepting request"
 		return m, m.acceptFriendRequestCmd(action.ID)
+	case panelActionEditRole:
+		role, ok := m.findPanelRole(action.ID)
+		if !ok {
+			m.Status = "role not found"
+			return m, nil
+		}
+		return m.openRoleEditor(role), nil
+	case panelActionAssignMemberRoles:
+		member, ok := m.findPanelMember(action.ID)
+		if !ok {
+			m.Status = "member not found"
+			return m, nil
+		}
+		return m.openMemberRoleEditor(member), nil
 	default:
 		return m, nil
 	}
+}
+
+func (m Model) panelEditorActive() bool {
+	return m.roleEditor != nil || m.memberEditor != nil
+}
+
+func (m *Model) movePanelEditorCursor(delta int) {
+	switch {
+	case m.roleEditor != nil:
+		m.roleEditor.Cursor = clampIndex(m.roleEditor.Cursor+delta, len(permissionDefs))
+	case m.memberEditor != nil:
+		m.memberEditor.Cursor = clampIndex(m.memberEditor.Cursor+delta, len(m.memberEditor.Roles))
+	}
+}
+
+func (m *Model) togglePanelEditorSelection() {
+	switch {
+	case m.roleEditor != nil && len(permissionDefs) > 0:
+		cursor := clampIndex(m.roleEditor.Cursor, len(permissionDefs))
+		m.roleEditor.Cursor = cursor
+		bit := permissionDefs[cursor].Bit
+		if m.roleEditor.Permissions&bit == bit {
+			m.roleEditor.Permissions &^= bit
+		} else {
+			m.roleEditor.Permissions |= bit
+		}
+		m.Status = "权限已切换"
+	case m.memberEditor != nil && len(m.memberEditor.Roles) > 0:
+		cursor := clampIndex(m.memberEditor.Cursor, len(m.memberEditor.Roles))
+		m.memberEditor.Cursor = cursor
+		roleID := m.memberEditor.Roles[cursor].ID
+		if m.memberEditor.Selected[roleID] {
+			delete(m.memberEditor.Selected, roleID)
+		} else {
+			m.memberEditor.Selected[roleID] = true
+		}
+		m.Status = "角色已切换"
+	}
+}
+
+func (m Model) openRoleEditor(role model.Role) Model {
+	m.panel = PanelCommand
+	m.panelTitle = "Role " + role.Name
+	m.panelDataLines = nil
+	m.panelActions = nil
+	m.panelCursor = 0
+	m.memberEditor = nil
+	m.roleEditor = &roleEditorState{
+		Role:        role,
+		Permissions: role.Permissions & permAll,
+		Cursor:      firstSelectedPermission(role.Permissions),
+	}
+	m.Status = "Space 切换，Enter 保存"
+	return m
+}
+
+func (m Model) openMemberRoleEditor(member model.Member) Model {
+	m.panel = PanelCommand
+	name := displayName(member.HiveNickname, displayName(member.Nickname, member.Username))
+	m.panelTitle = "Member roles " + name
+	m.panelDataLines = nil
+	m.panelActions = nil
+	m.panelCursor = 0
+	m.roleEditor = nil
+	selected := map[int64]bool{}
+	for _, roleID := range member.RoleIDs {
+		selected[roleID] = true
+	}
+	m.memberEditor = &memberRoleEditorState{
+		Member:   member,
+		Roles:    append([]model.Role(nil), m.panelRoles...),
+		Selected: selected,
+		Cursor:   firstSelectedRole(m.panelRoles, selected),
+	}
+	m.Status = "Space 切换，Enter 保存"
+	return m
+}
+
+func (m Model) saveRoleEditorCmd() tea.Cmd {
+	if m.roleEditor == nil {
+		return nil
+	}
+	role := m.roleEditor.Role
+	permissions := m.roleEditor.Permissions & permAll
+	return func() tea.Msg {
+		api, err := m.commandAPI()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		updated, err := api.UpdateRole(context.Background(), role.ID, model.RoleReq{
+			Name:        role.Name,
+			Color:       role.Color,
+			Permissions: permissions,
+		})
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		return commandResultMsg{
+			Title:  "角色已保存",
+			Lines:  []string{fmt.Sprintf("#%d  %s  %s", updated.ID, updated.Name, formatPermissions(updated.Permissions))},
+			Status: "角色已保存",
+			Roles:  []model.Role{updated},
+		}
+	}
+}
+
+func (m Model) saveMemberRolesCmd() tea.Cmd {
+	if m.memberEditor == nil {
+		return nil
+	}
+	member := m.memberEditor.Member
+	roleIDs := selectedRoleIDs(m.memberEditor)
+	return func() tea.Msg {
+		api, err := m.commandAPI()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		hiveID, err := m.requireHive()
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		if err := api.AssignRoles(context.Background(), hiveID, member.UserID, roleIDs); err != nil {
+			return commandResultMsg{Err: err}
+		}
+		name := displayName(member.HiveNickname, displayName(member.Nickname, member.Username))
+		return commandResultMsg{
+			Title:  "成员角色已保存",
+			Lines:  []string{fmt.Sprintf("%s  roles %v", name, roleIDs)},
+			Status: "成员角色已保存",
+		}
+	}
+}
+
+func (m Model) findPanelRole(roleID int64) (model.Role, bool) {
+	for _, role := range m.panelRoles {
+		if role.ID == roleID {
+			return role, true
+		}
+	}
+	return model.Role{}, false
+}
+
+func (m Model) findPanelMember(userID int64) (model.Member, bool) {
+	for _, member := range m.panelMembers {
+		if member.UserID == userID {
+			return member, true
+		}
+	}
+	return model.Member{}, false
+}
+
+func selectedRoleIDs(editor *memberRoleEditorState) []int64 {
+	if editor == nil {
+		return nil
+	}
+	roleIDs := make([]int64, 0, len(editor.Selected))
+	for _, role := range editor.Roles {
+		if editor.Selected[role.ID] {
+			roleIDs = append(roleIDs, role.ID)
+		}
+	}
+	return roleIDs
+}
+
+func firstSelectedPermission(permissions int64) int {
+	for i, def := range permissionDefs {
+		if permissions&def.Bit == def.Bit {
+			return i
+		}
+	}
+	return 0
+}
+
+func firstSelectedRole(roles []model.Role, selected map[int64]bool) int {
+	for i, role := range roles {
+		if selected[role.ID] {
+			return i
+		}
+	}
+	return 0
+}
+
+func clampIndex(index, length int) int {
+	if length <= 0 {
+		return 0
+	}
+	if index < 0 {
+		return 0
+	}
+	if index >= length {
+		return length - 1
+	}
+	return index
 }
 
 func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
@@ -667,6 +933,7 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		return m, m.loadFriendsCmd()
 	case menuActionDMs:
 		m.panel = PanelCommand
+		m.clearPanelActions()
 		m.Status = "正在加载私聊"
 		return m, m.loadDMsCmd()
 	case menuActionMembers:
@@ -676,6 +943,7 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		return m, m.loadMembersCmd()
 	case menuActionRoles:
 		m.panel = PanelCommand
+		m.clearPanelActions()
 		m.Status = "正在加载角色权限"
 		return m, m.loadRolesCmd()
 	case menuActionConfig:
@@ -1555,6 +1823,12 @@ func (m Model) panelLines(height, width int) []string {
 }
 
 func (m Model) panelContentLines(height, width int) []string {
+	if m.roleEditor != nil {
+		return clampLines(m.roleEditorLines(width), height)
+	}
+	if m.memberEditor != nil {
+		return clampLines(m.memberRoleEditorLines(width), height)
+	}
 	var lines []string
 	switch m.panel {
 	case PanelFriends:
@@ -1623,6 +1897,92 @@ func (m Model) panelContentLines(height, width int) []string {
 	return lines[:height]
 }
 
+func (m Model) roleEditorLines(width int) []string {
+	editor := m.roleEditor
+	if editor == nil {
+		return nil
+	}
+	contentWidth := max(4, width-2)
+	lines := []string{
+		"",
+		accentStyle.Render("Role " + editor.Role.Name),
+		mutedStyle.Render("Space 切换权限 | Enter 保存 | Esc 返回"),
+		mutedStyle.Render(fmt.Sprintf("#%d  %s", editor.Role.ID, editor.Role.Color)),
+		"",
+	}
+	for i, def := range permissionDefs {
+		prefix := "  "
+		selected := i == editor.Cursor
+		if selected {
+			prefix = "> "
+		}
+		check := "[ ]"
+		if editor.Permissions&def.Bit == def.Bit {
+			check = "[x]"
+		}
+		line := fitLine(fmt.Sprintf("%s%s %-17s %s", prefix, check, def.Name, def.Label), contentWidth)
+		if selected {
+			line = accentStyle.Render(line)
+		} else if editor.Permissions&def.Bit == def.Bit {
+			line = primaryStyle.Render(line)
+		} else {
+			line = mutedStyle.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", mutedStyle.Render("Esc 返回"))
+	return lines
+}
+
+func (m Model) memberRoleEditorLines(width int) []string {
+	editor := m.memberEditor
+	if editor == nil {
+		return nil
+	}
+	contentWidth := max(4, width-2)
+	name := displayName(editor.Member.HiveNickname, displayName(editor.Member.Nickname, editor.Member.Username))
+	lines := []string{
+		"",
+		accentStyle.Render("Member roles " + name),
+		mutedStyle.Render("Space 切换角色 | Enter 保存 | Esc 返回"),
+		mutedStyle.Render(fmt.Sprintf("#%d  @%s", editor.Member.UserID, editor.Member.Username)),
+		"",
+	}
+	if len(editor.Roles) == 0 {
+		lines = append(lines, mutedStyle.Render("还没有角色，可用 /role create 创建"))
+	} else {
+		for i, role := range editor.Roles {
+			prefix := "  "
+			selected := i == editor.Cursor
+			if selected {
+				prefix = "> "
+			}
+			check := "[ ]"
+			if editor.Selected[role.ID] {
+				check = "[x]"
+			}
+			line := fitLine(fmt.Sprintf("%s%s %-16s %s", prefix, check, role.Name, formatPermissions(role.Permissions)), contentWidth)
+			if selected {
+				line = accentStyle.Render(line)
+			} else if editor.Selected[role.ID] {
+				line = primaryStyle.Render(line)
+			} else {
+				line = mutedStyle.Render(line)
+			}
+			lines = append(lines, line)
+		}
+	}
+	lines = append(lines, "", mutedStyle.Render("Esc 返回"))
+	return lines
+}
+
+func clampLines(lines []string, height int) []string {
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	return lines[:height]
+}
+
 func (m Model) menuContentLines(height, width int) []string {
 	items := m.menuItems()
 	contentWidth := max(4, width-4)
@@ -1675,6 +2035,8 @@ func (m Model) statusLine(width int) string {
 	parts := []string{styleConnectionStatus(m.Status), accentStyle.Render(m.activityLabel())}
 	if m.menuOpen {
 		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Enter 执行"), mutedStyle.Render("Esc 返回"))
+	} else if m.panelEditorActive() {
+		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Space 切换"), mutedStyle.Render("Enter 保存"), mutedStyle.Render("Esc 返回"))
 	} else if m.panel != PanelNone && len(m.panelActions) > 0 {
 		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Enter 执行"), mutedStyle.Render("Esc 返回"))
 	} else {

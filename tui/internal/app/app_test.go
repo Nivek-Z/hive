@@ -701,6 +701,94 @@ func TestRolesPanelShowsNamedPermissions(t *testing.T) {
 	}
 }
 
+func TestRolePermissionPanelTogglesAndSavesRole(t *testing.T) {
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{},
+		roles:   []model.Role{{ID: 5, Name: "writer", Color: "#ffb300", Permissions: 512}},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 20})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd == nil {
+		t.Fatal("expected roles loading command")
+	}
+	updated, _ = updated.Update(cmd())
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	editor := updated.(app.Model).View()
+	for _, want := range []string{"writer", "[x] SEND_MESSAGES", "[ ] ATTACH_FILES", "Space", "Enter"} {
+		if !strings.Contains(editor, want) {
+			t.Fatalf("expected %q in role editor:\n%s", want, editor)
+		}
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected save role command")
+	}
+	updated, _ = updated.Update(cmd())
+
+	if !contains(api.calls, "role:update:5:writer:1536") {
+		t.Fatalf("expected updated permission bits, got %#v", api.calls)
+	}
+}
+
+func TestMemberPanelAssignsRolesWithSpaceAndEnter(t *testing.T) {
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{},
+		members: []model.Member{{UserID: 9, Username: "nivek", Nickname: "nivek", RoleIDs: []int64{5}}},
+		roles: []model.Role{
+			{ID: 5, Name: "writer", Color: "#ffb300", Permissions: 512},
+			{ID: 6, Name: "admin", Color: "#ff5555", Permissions: 4095},
+		},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 20})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if cmd == nil {
+		t.Fatal("expected members loading command")
+	}
+	updated, _ = updated.Update(cmd())
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	editor := updated.(app.Model).View()
+	for _, want := range []string{"nivek", "[x] writer", "[ ] admin", "Space", "Enter"} {
+		if !strings.Contains(editor, want) {
+			t.Fatalf("expected %q in member role editor:\n%s", want, editor)
+		}
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected assign roles command")
+	}
+	updated, _ = updated.Update(cmd())
+
+	if !contains(api.calls, "member:roles:1:9:[5 6]") {
+		t.Fatalf("expected selected roles to be saved, got %#v", api.calls)
+	}
+}
+
 func TestFriendsPanelEnterOpensSelectedDM(t *testing.T) {
 	api := &fullFakeAPI{
 		fakeAPI:  fakeAPI{},
@@ -1366,7 +1454,7 @@ func (f *fullFakeAPI) CreateRole(_ context.Context, hiveID int64, req model.Role
 }
 
 func (f *fullFakeAPI) UpdateRole(_ context.Context, roleID int64, req model.RoleReq) (model.Role, error) {
-	f.calls = append(f.calls, fmt.Sprintf("role:update:%d", roleID))
+	f.calls = append(f.calls, fmt.Sprintf("role:update:%d:%s:%d", roleID, req.Name, req.Permissions))
 	return model.Role{ID: roleID, Name: req.Name, Color: req.Color, Permissions: req.Permissions}, nil
 }
 

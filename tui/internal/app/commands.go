@@ -131,7 +131,12 @@ func (m Model) loadMembersCmd() tea.Cmd {
 		if err != nil {
 			return commandResultMsg{Err: err}
 		}
-		lines := []string{mutedStyle.Render(fmt.Sprintf("members %d", len(members)))}
+		roles, err := api.Roles(context.Background(), hiveID)
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+		lines := []string{mutedStyle.Render(fmt.Sprintf("成员 %d，Enter 分配角色", len(members)))}
+		actions := make([]panelAction, 0, len(members))
 		for _, member := range members {
 			flag := ""
 			if member.Owner {
@@ -140,9 +145,16 @@ func (m Model) loadMembersCmd() tea.Cmd {
 			if member.MutedUntil != "" {
 				flag += " muted"
 			}
-			lines = append(lines, fmt.Sprintf("#%d  %s  @%s%s", member.UserID, displayName(member.Nickname, member.Username), member.Username, flag))
+			name := displayName(member.Nickname, member.Username)
+			actions = append(actions, panelAction{
+				Label: fmt.Sprintf("#%d  %s  @%s%s", member.UserID, name, member.Username, flag),
+				Hint:  "分配角色",
+				Kind:  panelActionAssignMemberRoles,
+				ID:    member.UserID,
+				Name:  name,
+			})
 		}
-		return commandResultMsg{Title: "Members", Lines: lines, Status: "members loaded"}
+		return commandResultMsg{Title: "Members", Lines: lines, Actions: actions, Members: members, Roles: roles, Status: "members loaded"}
 	}
 }
 
@@ -841,11 +853,21 @@ func (m Model) rolesResult(api commandAPI) commandResultMsg {
 	if err != nil {
 		return commandResultMsg{Err: err}
 	}
-	lines := []string{mutedStyle.Render("use /permissions for names and presets")}
+	lines := []string{mutedStyle.Render("Enter 编辑角色权限，/permissions 查看权限名和预设")}
+	actions := make([]panelAction, 0, len(roles))
 	for _, role := range roles {
-		lines = append(lines, fmt.Sprintf("#%d  %s  %s  %s", role.ID, role.Name, role.Color, formatPermissions(role.Permissions)))
+		actions = append(actions, panelAction{
+			Label: fmt.Sprintf("#%d  %s  %s  %s", role.ID, role.Name, role.Color, formatPermissions(role.Permissions)),
+			Hint:  "编辑权限",
+			Kind:  panelActionEditRole,
+			ID:    role.ID,
+			Name:  role.Name,
+		})
 	}
-	return commandResultMsg{Title: "Roles", Lines: nonEmpty(lines), Status: "roles loaded"}
+	if len(actions) == 0 {
+		lines = append(lines, mutedStyle.Render("还没有角色，可用 /role create <name>|<#color>|<permissions> 创建"))
+	}
+	return commandResultMsg{Title: "Roles", Lines: nonEmpty(lines), Actions: actions, Roles: roles, Status: "roles loaded"}
 }
 
 func (m Model) uploadCommand(api commandAPI, rest string) commandResultMsg {
