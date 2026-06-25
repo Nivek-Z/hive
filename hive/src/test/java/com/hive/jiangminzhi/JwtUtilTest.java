@@ -23,8 +23,11 @@ class JwtUtilTest {
     @Test
     void tamperedSignatureRejected() {
         String token = jwt.create(1L, "a");
-        char last = token.charAt(token.length() - 1);
-        String tampered = token.substring(0, token.length() - 1) + (last == 'A' ? 'B' : 'A');
+        String[] parts = token.split("\\.");
+        String signature = parts[2];
+        char first = signature.charAt(0);
+        String tamperedSignature = (first == 'A' ? 'B' : 'A') + signature.substring(1);
+        String tampered = parts[0] + "." + parts[1] + "." + tamperedSignature;
         assertTrue(jwt.parse(tampered).isEmpty(), "篡改签名后应校验失败");
     }
 
