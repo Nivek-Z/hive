@@ -789,6 +789,47 @@ func TestMemberPanelAssignsRolesWithSpaceAndEnter(t *testing.T) {
 	}
 }
 
+func TestOwnerMemberRoleEditorIsReadOnlyAndDoesNotAssignRoles(t *testing.T) {
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{},
+		members: []model.Member{{UserID: 1, Username: "nivek", Nickname: "nivek", Owner: true, RoleIDs: []int64{5}}},
+		roles:   []model.Role{{ID: 5, Name: "owner", Color: "#ffb300", Permissions: 4095}},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusMessages
+	m.State = app.State{
+		CurrentHiveID:    1,
+		CurrentChannelID: 2,
+		CurrentUser:      model.User{ID: 1, Username: "nivek", Nickname: "nivek"},
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 20})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if cmd == nil {
+		t.Fatal("expected members loading command")
+	}
+	updated, _ = updated.Update(cmd())
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view := updated.(app.Model).View()
+	if !strings.Contains(view, "受保护") {
+		t.Fatalf("expected protected owner editor:\n%s", view)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		updated, _ = updated.Update(cmd())
+	}
+	for _, call := range api.calls {
+		if strings.HasPrefix(call, "member:roles:") {
+			t.Fatalf("owner roles should not be assigned from panel, calls=%#v", api.calls)
+		}
+	}
+}
+
 func TestFriendsPanelEnterOpensSelectedDM(t *testing.T) {
 	api := &fullFakeAPI{
 		fakeAPI:  fakeAPI{},
@@ -827,6 +868,12 @@ func TestFriendsPanelEnterOpensSelectedDM(t *testing.T) {
 	if !strings.Contains(view, "#dm-zkw") || !contains(api.calls, "dm:open:8") {
 		t.Fatalf("expected selected friend to open DM:\n%s\ncalls=%#v", view, api.calls)
 	}
+	if strings.Contains(view, "# dm-zkw") {
+		t.Fatalf("dm should not be inserted as a normal left-nav channel:\n%s", view)
+	}
+	if strings.Contains(view, "Friends") {
+		t.Fatalf("opening dm should close friends panel and show conversation:\n%s", view)
+	}
 }
 
 func TestDMSPanelShortcutOpensSelectedConversation(t *testing.T) {
@@ -862,6 +909,12 @@ func TestDMSPanelShortcutOpensSelectedConversation(t *testing.T) {
 	if !strings.Contains(view, "#dm-zkw") || !contains(api.calls, "messages:44:50") {
 		t.Fatalf("expected selected dm to open conversation:\n%s\ncalls=%#v", view, api.calls)
 	}
+	if strings.Contains(view, "# dm-zkw") {
+		t.Fatalf("dm should not be inserted as a normal left-nav channel:\n%s", view)
+	}
+	if strings.Contains(view, "DMs") {
+		t.Fatalf("opening dm should close dms panel and show conversation:\n%s", view)
+	}
 }
 
 func TestDMCommandAddsSyntheticChannelHeader(t *testing.T) {
@@ -888,6 +941,9 @@ func TestDMCommandAddsSyntheticChannelHeader(t *testing.T) {
 	if !strings.Contains(view, "#dm") || !contains(api.calls, "dm:open:9") {
 		t.Fatalf("expected dm channel header:\n%s\ncalls=%#v", view, api.calls)
 	}
+	if strings.Contains(view, "# dm") {
+		t.Fatalf("dm command should not create a normal nav channel:\n%s", view)
+	}
 }
 
 func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
@@ -902,7 +958,7 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	composerMenu := updated.(app.Model).View()
-	for _, want := range []string{"消息操作", "切换群聊", "好友", "在线成员", "设置"} {
+	for _, want := range []string{"消息操作", "切换群聊", "创建群聊", "加入群聊", "好友", "在线成员", "设置"} {
 		if !strings.Contains(composerMenu, want) {
 			t.Fatalf("expected %q in composer menu:\n%s", want, composerMenu)
 		}
@@ -917,7 +973,7 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 	m.Focus = app.FocusMessages
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	messagesMenu := updated.(app.Model).View()
-	for _, want := range []string{"聊天记录", "跳到最新", "成员列表"} {
+	for _, want := range []string{"聊天记录", "跳到最新", "成员列表", "好友", "私聊"} {
 		if !strings.Contains(messagesMenu, want) {
 			t.Fatalf("expected %q in messages menu:\n%s", want, messagesMenu)
 		}
@@ -926,10 +982,71 @@ func TestTabMenuShowsContextItemsAndClosesWithEsc(t *testing.T) {
 	m.Focus = app.FocusNav
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	navMenu := updated.(app.Model).View()
-	for _, want := range []string{"频道列表", "打开/收放", "切换群聊"} {
+	for _, want := range []string{"频道列表", "打开/收放", "切换群聊", "创建群聊", "加入群聊", "好友", "私聊"} {
 		if !strings.Contains(navMenu, want) {
 			t.Fatalf("expected %q in nav menu:\n%s", want, navMenu)
 		}
+	}
+}
+
+func TestInfoPanelDoesNotExposeMembersAPIPendingPlaceholder(t *testing.T) {
+	m := app.NewModel(app.Dependencies{})
+	m.Mode = app.ModeChat
+	m.State = app.State{
+		CurrentHiveID:    1,
+		Hives:            []model.Hive{{ID: 1, Name: "fgm"}},
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 12})
+	view := updated.(app.Model).View()
+
+	if strings.Contains(view, "members API pending") {
+		t.Fatalf("right info panel should not expose implementation placeholders:\n%s", view)
+	}
+}
+
+func TestHiveCreateAndJoinCommandsSwitchToNewHive(t *testing.T) {
+	api := &fullFakeAPI{
+		fakeAPI: fakeAPI{
+			detailsByHive: map[int64]model.HiveDetail{
+				12: {ID: 12, Name: "joined", Channels: []model.Channel{{ID: 22, HiveID: 12, Type: "TEXT", Name: "general"}}},
+			},
+		},
+	}
+	m := app.NewModel(app.Dependencies{API: api})
+	m.Mode = app.ModeChat
+	m.Focus = app.FocusComposer
+	m.State = app.State{
+		CurrentHiveID:    1,
+		Hives:            []model.Hive{{ID: 1, Name: "old"}},
+		CurrentChannelID: 2,
+		Channels:         []model.Channel{{ID: 2, HiveID: 1, Type: "TEXT", Name: "Lobby"}},
+		Unreads:          map[int64]int{},
+	}
+
+	m.Input = "/hive create fgm||#ffb300"
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected hive create command")
+	}
+	updated, _ = updated.Update(cmd())
+	created := updated.(app.Model)
+	if created.State.CurrentHiveID != 11 || created.State.CurrentChannelID == 2 || !contains(api.calls, "hive:create:fgm") {
+		t.Fatalf("expected create to switch hive, state=%#v calls=%#v", created.State, api.calls)
+	}
+
+	created.Input = "/join invite-code"
+	updated, cmd = created.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected join command")
+	}
+	updated, _ = updated.Update(cmd())
+	joined := updated.(app.Model)
+	if joined.State.CurrentHiveID != 12 || joined.State.CurrentChannelID != 22 || !contains(api.calls, "join:invite-code") {
+		t.Fatalf("expected join to switch hive, state=%#v calls=%#v", joined.State, api.calls)
 	}
 }
 
@@ -1304,7 +1421,13 @@ func (f *fullFakeAPI) User(_ context.Context, id int64) (model.User, error) {
 
 func (f *fullFakeAPI) CreateHive(_ context.Context, req model.HiveReq) (model.HiveDetail, error) {
 	f.calls = append(f.calls, "hive:create:"+req.Name)
-	return model.HiveDetail{ID: 11, Name: req.Name, Description: req.Description, IconColor: req.IconColor}, nil
+	return model.HiveDetail{
+		ID:          11,
+		Name:        req.Name,
+		Description: req.Description,
+		IconColor:   req.IconColor,
+		Channels:    []model.Channel{{ID: 21, HiveID: 11, Type: "TEXT", Name: "general"}},
+	}, nil
 }
 
 func (f *fullFakeAPI) UpdateHive(_ context.Context, hiveID int64, req model.HiveReq) (model.Hive, error) {

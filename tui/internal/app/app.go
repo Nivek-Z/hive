@@ -68,6 +68,8 @@ const (
 	menuActionJumpLatest
 	menuActionNavOpen
 	menuActionSwitchHive
+	menuActionCreateHive
+	menuActionJoinHive
 	menuActionRefreshChannels
 	menuActionLogin
 	menuActionRegister
@@ -105,10 +107,12 @@ type roleEditorState struct {
 }
 
 type memberRoleEditorState struct {
-	Member   model.Member
-	Roles    []model.Role
-	Selected map[int64]bool
-	Cursor   int
+	Member         model.Member
+	Roles          []model.Role
+	Selected       map[int64]bool
+	Cursor         int
+	ReadOnly       bool
+	ReadOnlyReason string
 }
 
 type Dependencies struct {
@@ -145,22 +149,24 @@ type Model struct {
 	Password string
 	Input    string
 
-	width          int
-	height         int
-	messageScroll  int
-	navCursor      int
-	collapsed      map[int64]bool
-	panel          Panel
-	menuOpen       bool
-	menuCursor     int
-	panelTitle     string
-	panelDataLines []string
-	panelCursor    int
-	panelActions   []panelAction
-	panelRoles     []model.Role
-	panelMembers   []model.Member
-	roleEditor     *roleEditorState
-	memberEditor   *memberRoleEditorState
+	width             int
+	height            int
+	messageScroll     int
+	navCursor         int
+	collapsed         map[int64]bool
+	panel             Panel
+	menuOpen          bool
+	menuCursor        int
+	panelTitle        string
+	panelDataLines    []string
+	panelCursor       int
+	panelActions      []panelAction
+	panelRoles        []model.Role
+	panelMembers      []model.Member
+	roleEditor        *roleEditorState
+	memberEditor      *memberRoleEditorState
+	directChannelID   int64
+	directChannelName string
 }
 
 type incomingMessageMsg struct {
@@ -175,17 +181,18 @@ type deletedMessageMsg struct {
 type statusMsg string
 
 type commandResultMsg struct {
-	Title       string
-	Lines       []string
-	Status      string
-	Err         error
-	SetChannel  bool
-	ChannelID   int64
-	ChannelName string
-	Messages    []model.Message
-	Actions     []panelAction
-	Roles       []model.Role
-	Members     []model.Member
+	Title         string
+	Lines         []string
+	Status        string
+	Err           error
+	SetChannel    bool
+	DirectChannel bool
+	ChannelID     int64
+	ChannelName   string
+	Messages      []model.Message
+	Actions       []panelAction
+	Roles         []model.Role
+	Members       []model.Member
 }
 
 type channelLoadedMsg struct {
@@ -198,10 +205,12 @@ type channelLoadedMsg struct {
 type hiveLoadedMsg struct {
 	HiveID           int64
 	HiveName         string
+	Hives            []model.Hive
 	Channels         []model.Channel
 	Unreads          map[int64]int
 	CurrentChannelID int64
 	Messages         []model.Message
+	Status           string
 	Err              error
 }
 
@@ -255,11 +264,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.SetChannel {
 			m.State.CurrentChannelID = msg.ChannelID
-			m.ensureCommandChannel(msg.ChannelID, msg.ChannelName)
+			if msg.DirectChannel {
+				m.directChannelID = msg.ChannelID
+				m.directChannelName = msg.ChannelName
+			} else {
+				m.directChannelID = 0
+				m.directChannelName = ""
+				m.ensureCommandChannel(msg.ChannelID, msg.ChannelName)
+			}
 			m.State.Messages = msg.Messages
 			m.messageScroll = 0
 			m.Focus = FocusComposer
-			m.clearPanelEditors()
+			m.panel = PanelNone
+			m.clearPanelActions()
 		}
 		if msg.Title != "" || len(msg.Lines) > 0 {
 			m.panel = PanelCommand
@@ -282,6 +299,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.ChannelID == m.State.CurrentChannelID {
 			m.State.Messages = msg.Messages
+			m.directChannelID = 0
+			m.directChannelName = ""
 			m.messageScroll = 0
 			m.Status = "opened #" + msg.ChannelName
 		}
@@ -291,15 +310,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Status = msg.Err.Error()
 			return m, nil
 		}
+		if len(msg.Hives) > 0 {
+			m.State.Hives = msg.Hives
+		}
 		m.State.CurrentHiveID = msg.HiveID
 		m.State.Channels = msg.Channels
 		m.State.Unreads = msg.Unreads
 		m.State.CurrentChannelID = msg.CurrentChannelID
 		m.State.Messages = msg.Messages
+		m.directChannelID = 0
+		m.directChannelName = ""
 		m.messageScroll = 0
 		m.panel = PanelNone
 		m.clearPanelActions()
-		m.Status = "opened hive " + msg.HiveName
+		if msg.Status != "" {
+			m.Status = msg.Status
+		} else {
+			m.Status = "opened hive " + msg.HiveName
+		}
 		m.syncNavCursorToCurrent()
 		return m, nil
 	case loginCompleteMsg:
@@ -733,6 +761,10 @@ func (m *Model) togglePanelEditorSelection() {
 		}
 		m.Status = "权限已切换"
 	case m.memberEditor != nil && len(m.memberEditor.Roles) > 0:
+		if m.memberEditor.ReadOnly {
+			m.Status = m.memberEditor.ReadOnlyReason
+			return
+		}
 		cursor := clampIndex(m.memberEditor.Cursor, len(m.memberEditor.Roles))
 		m.memberEditor.Cursor = cursor
 		roleID := m.memberEditor.Roles[cursor].ID
@@ -747,7 +779,7 @@ func (m *Model) togglePanelEditorSelection() {
 
 func (m Model) openRoleEditor(role model.Role) Model {
 	m.panel = PanelCommand
-	m.panelTitle = "Role " + role.Name
+	m.panelTitle = "角色模板 " + role.Name
 	m.panelDataLines = nil
 	m.panelActions = nil
 	m.panelCursor = 0
@@ -764,7 +796,7 @@ func (m Model) openRoleEditor(role model.Role) Model {
 func (m Model) openMemberRoleEditor(member model.Member) Model {
 	m.panel = PanelCommand
 	name := displayName(member.HiveNickname, displayName(member.Nickname, member.Username))
-	m.panelTitle = "Member roles " + name
+	m.panelTitle = "成员角色 " + name
 	m.panelDataLines = nil
 	m.panelActions = nil
 	m.panelCursor = 0
@@ -774,10 +806,12 @@ func (m Model) openMemberRoleEditor(member model.Member) Model {
 		selected[roleID] = true
 	}
 	m.memberEditor = &memberRoleEditorState{
-		Member:   member,
-		Roles:    append([]model.Role(nil), m.panelRoles...),
-		Selected: selected,
-		Cursor:   firstSelectedRole(m.panelRoles, selected),
+		Member:         member,
+		Roles:          append([]model.Role(nil), m.panelRoles...),
+		Selected:       selected,
+		Cursor:         firstSelectedRole(m.panelRoles, selected),
+		ReadOnly:       m.memberRoleEditorReadOnly(member),
+		ReadOnlyReason: "群主/自己的角色受保护，不能在这里修改",
 	}
 	m.Status = "Space 切换，Enter 保存"
 	return m
@@ -815,6 +849,12 @@ func (m Model) saveMemberRolesCmd() tea.Cmd {
 	if m.memberEditor == nil {
 		return nil
 	}
+	if m.memberEditor.ReadOnly {
+		reason := m.memberEditor.ReadOnlyReason
+		return func() tea.Msg {
+			return statusMsg(reason)
+		}
+	}
 	member := m.memberEditor.Member
 	roleIDs := selectedRoleIDs(m.memberEditor)
 	return func() tea.Msg {
@@ -836,6 +876,13 @@ func (m Model) saveMemberRolesCmd() tea.Cmd {
 			Status: "成员角色已保存",
 		}
 	}
+}
+
+func (m Model) memberRoleEditorReadOnly(member model.Member) bool {
+	if member.Owner {
+		return true
+	}
+	return m.State.CurrentUser.ID != 0 && member.UserID == m.State.CurrentUser.ID
 }
 
 func (m Model) findPanelRole(roleID int64) (model.Role, bool) {
@@ -964,6 +1011,16 @@ func (m Model) executeMenuSelection() (tea.Model, tea.Cmd) {
 		m.panel = PanelNone
 		m.syncNavCursorToCurrentHive()
 		m.Status = "选择群聊后按 Enter"
+	case menuActionCreateHive:
+		m.Focus = FocusComposer
+		m.panel = PanelNone
+		m.Input = "/hive create "
+		m.Status = "输入群聊名称，格式：名称|描述|颜色"
+	case menuActionJoinHive:
+		m.Focus = FocusComposer
+		m.panel = PanelNone
+		m.Input = "/join "
+		m.Status = "输入邀请链接或邀请码后按 Enter"
 	case menuActionRefreshChannels:
 		if m.State.CurrentHiveID == 0 {
 			m.Status = "no hive selected"
@@ -995,6 +1052,10 @@ func (m Model) menuItems() []menuItem {
 			{Label: "打开/收放", Hint: "Enter", Action: menuActionNavOpen},
 			{Label: "切换群聊", Hint: "选择", Action: menuActionSwitchHive},
 			{Label: "刷新频道", Hint: "刷新", Action: menuActionRefreshChannels},
+			{Label: "创建群聊", Hint: "新建", Action: menuActionCreateHive},
+			{Label: "加入群聊", Hint: "邀请码", Action: menuActionJoinHive},
+			{Label: "好友", Hint: "F", Action: menuActionFriends},
+			{Label: "私聊", Hint: "D", Action: menuActionDMs},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
 		}
 	case FocusMessages:
@@ -1017,6 +1078,8 @@ func (m Model) menuItems() []menuItem {
 			{Label: "在线成员", Hint: "M", Action: menuActionMembers},
 			{Label: "私聊", Hint: "D", Action: menuActionDMs},
 			{Label: "角色权限", Hint: "R", Action: menuActionRoles},
+			{Label: "创建群聊", Hint: "新建", Action: menuActionCreateHive},
+			{Label: "加入群聊", Hint: "邀请码", Action: menuActionJoinHive},
 			{Label: "设置", Hint: ",", Action: menuActionConfig},
 		}...)
 		return items
@@ -1319,6 +1382,9 @@ func (m *Model) ensureCommandChannel(channelID int64, channelName string) {
 }
 
 func (m Model) currentChannelName() string {
+	if m.directChannelID != 0 && m.State.CurrentChannelID == m.directChannelID && strings.TrimSpace(m.directChannelName) != "" {
+		return m.directChannelName
+	}
 	if channel, ok := m.currentChannel(); ok && strings.TrimSpace(channel.Name) != "" {
 		return channel.Name
 	}
@@ -1646,13 +1712,12 @@ func (m Model) infoLines(height, width int) []string {
 	} else if len(m.State.OnlineUserIDs) > 0 {
 		lines = append(lines, fmt.Sprintf("%s %s", greenDot(), primaryStyle.Render(fmt.Sprintf("%d online", len(m.State.OnlineUserIDs)))))
 	} else {
-		lines = append(lines, mutedStyle.Render("members API pending"))
+		lines = append(lines, mutedStyle.Render("暂无在线信息"))
 	}
 	if len(m.State.OnlineUserIDs) > 1 && userName != "" {
 		lines = append(lines, mutedStyle.Render(fmt.Sprintf("%d online", len(m.State.OnlineUserIDs))))
 	}
 	lines = append(lines,
-		mutedStyle.Render("members API pending"),
 		"",
 		mutedStyle.Render("CURRENT"),
 		accentStyle.Render(m.currentHiveName()),
@@ -1905,9 +1970,9 @@ func (m Model) roleEditorLines(width int) []string {
 	contentWidth := max(4, width-2)
 	lines := []string{
 		"",
-		accentStyle.Render("Role " + editor.Role.Name),
+		accentStyle.Render("角色模板 " + editor.Role.Name),
 		mutedStyle.Render("Space 切换权限 | Enter 保存 | Esc 返回"),
-		mutedStyle.Render(fmt.Sprintf("#%d  %s", editor.Role.ID, editor.Role.Color)),
+		mutedStyle.Render("修改会影响拥有该角色的普通成员；群主身份由后端独立保护"),
 		"",
 	}
 	for i, def := range permissionDefs {
@@ -1943,10 +2008,14 @@ func (m Model) memberRoleEditorLines(width int) []string {
 	name := displayName(editor.Member.HiveNickname, displayName(editor.Member.Nickname, editor.Member.Username))
 	lines := []string{
 		"",
-		accentStyle.Render("Member roles " + name),
-		mutedStyle.Render("Space 切换角色 | Enter 保存 | Esc 返回"),
-		mutedStyle.Render(fmt.Sprintf("#%d  @%s", editor.Member.UserID, editor.Member.Username)),
+		accentStyle.Render("成员角色 " + name),
+		mutedStyle.Render("@" + editor.Member.Username),
 		"",
+	}
+	if editor.ReadOnly {
+		lines = append(lines, mutedStyle.Render("受保护："+editor.ReadOnlyReason), mutedStyle.Render("Esc 返回"), "")
+	} else {
+		lines = append(lines, mutedStyle.Render("Space 切换角色 | Enter 保存 | Esc 返回"))
 	}
 	if len(editor.Roles) == 0 {
 		lines = append(lines, mutedStyle.Render("还没有角色，可用 /role create 创建"))
@@ -2035,6 +2104,8 @@ func (m Model) statusLine(width int) string {
 	parts := []string{styleConnectionStatus(m.Status), accentStyle.Render(m.activityLabel())}
 	if m.menuOpen {
 		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Enter 执行"), mutedStyle.Render("Esc 返回"))
+	} else if m.memberEditor != nil && m.memberEditor.ReadOnly {
+		parts = append(parts, mutedStyle.Render("↑↓ 查看"), mutedStyle.Render("Esc 返回"))
 	} else if m.panelEditorActive() {
 		parts = append(parts, mutedStyle.Render("↑↓ 选择"), mutedStyle.Render("Space 切换"), mutedStyle.Render("Enter 保存"), mutedStyle.Render("Esc 返回"))
 	} else if m.panel != PanelNone && len(m.panelActions) > 0 {

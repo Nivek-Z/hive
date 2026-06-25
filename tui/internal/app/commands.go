@@ -20,6 +20,7 @@ type commandAPI interface {
 	ChangePassword(context.Context, string, string) error
 	User(context.Context, int64) (model.User, error)
 	CreateHive(context.Context, model.HiveReq) (model.HiveDetail, error)
+	HiveDetail(context.Context, int64) (model.HiveDetail, error)
 	UpdateHive(context.Context, int64, model.HiveReq) (model.Hive, error)
 	DeleteHive(context.Context, int64) error
 	LeaveHive(context.Context, int64) error
@@ -147,7 +148,7 @@ func (m Model) loadMembersCmd() tea.Cmd {
 			}
 			name := displayName(member.Nickname, member.Username)
 			actions = append(actions, panelAction{
-				Label: fmt.Sprintf("#%d  %s  @%s%s", member.UserID, name, member.Username, flag),
+				Label: fmt.Sprintf("%s  @%s%s", name, member.Username, flag),
 				Hint:  "分配角色",
 				Kind:  panelActionAssignMemberRoles,
 				ID:    member.UserID,
@@ -348,8 +349,8 @@ func (m Model) commandCmd(input string) tea.Cmd {
 	}
 }
 
-func (m Model) hiveCommand(api commandAPI, rest string) commandResultMsg {
-	return runWithAPI(api, func(api commandAPI) commandResultMsg {
+func (m Model) hiveCommand(api commandAPI, rest string) tea.Msg {
+	return runWithAPIMsg(api, func(api commandAPI) tea.Msg {
 		sub, rest := splitCommand(rest)
 		switch sub {
 		case "create":
@@ -362,7 +363,7 @@ func (m Model) hiveCommand(api commandAPI, rest string) commandResultMsg {
 			if err != nil {
 				return commandResultMsg{Err: err}
 			}
-			return commandResultMsg{Title: "Hive", Lines: []string{fmt.Sprintf("#%d %s", detail.ID, detail.Name)}, Status: "hive created"}
+			return m.hiveLoadedFromDetail(api, detail, "已创建并打开群聊")
 		case "update":
 			hiveID, err := m.requireHive()
 			if err != nil {
@@ -474,8 +475,8 @@ func (m Model) memberCommand(api commandAPI, rest string) commandResultMsg {
 	})
 }
 
-func (m Model) inviteCommand(api commandAPI, cmd, rest string) commandResultMsg {
-	return runWithAPI(api, func(api commandAPI) commandResultMsg {
+func (m Model) inviteCommand(api commandAPI, cmd, rest string) tea.Msg {
+	return runWithAPIMsg(api, func(api commandAPI) tea.Msg {
 		hiveID, err := m.requireHive()
 		if err != nil && cmd != "join" {
 			return commandResultMsg{Err: err}
@@ -500,7 +501,14 @@ func (m Model) inviteCommand(api commandAPI, cmd, rest string) commandResultMsg 
 			if err != nil {
 				return commandResultMsg{Err: err}
 			}
-			return commandResultMsg{Title: "Joined", Lines: []string{fmt.Sprintf("#%d %s", hive.ID, hive.Name)}, Status: "joined hive"}
+			detail, err := api.HiveDetail(context.Background(), hive.ID)
+			if err != nil {
+				return commandResultMsg{Err: err}
+			}
+			if strings.TrimSpace(detail.Name) == "" {
+				detail.Name = hive.Name
+			}
+			return m.hiveLoadedFromDetail(api, detail, "已加入并打开群聊")
 		default:
 			sub, rest := splitCommand(rest)
 			if sub != "create" {
@@ -722,13 +730,13 @@ func (m Model) dmsResult(api commandAPI) commandResultMsg {
 	if err != nil {
 		return commandResultMsg{Err: err}
 	}
-	lines := []string{mutedStyle.Render(fmt.Sprintf("conversations %d", len(dms)))}
+	lines := []string{mutedStyle.Render(fmt.Sprintf("会话 %d", len(dms)))}
 	actions := make([]panelAction, 0, len(dms))
 	for _, dm := range dms {
 		name := "dm-" + displayName(dm.Nickname, dm.Username)
 		actions = append(actions, panelAction{
-			Label: fmt.Sprintf("channel #%d  %s  unread %d  %s", dm.ChannelID, displayName(dm.Nickname, dm.Username), dm.Unread, emptyDash(dm.LastContent)),
-			Hint:  "打开",
+			Label: fmt.Sprintf("%s  未读 %d  %s", displayName(dm.Nickname, dm.Username), dm.Unread, emptyDash(dm.LastContent)),
+			Hint:  "打开私聊",
 			Kind:  panelActionOpenDMChannel,
 			ID:    dm.ChannelID,
 			Name:  name,
@@ -772,7 +780,7 @@ func (m Model) openDMChannelResult(api commandAPI, channelID int64, name string)
 	if err != nil {
 		return commandResultMsg{Err: err}
 	}
-	return commandResultMsg{SetChannel: true, ChannelID: channelID, ChannelName: name, Messages: messages, Status: fmt.Sprintf("opened %s", name)}
+	return commandResultMsg{SetChannel: true, DirectChannel: true, ChannelID: channelID, ChannelName: name, Messages: messages, Status: fmt.Sprintf("opened %s", name)}
 }
 
 func (m Model) acceptFriendRequestCmd(requestID int64) tea.Cmd {
@@ -857,7 +865,7 @@ func (m Model) rolesResult(api commandAPI) commandResultMsg {
 	actions := make([]panelAction, 0, len(roles))
 	for _, role := range roles {
 		actions = append(actions, panelAction{
-			Label: fmt.Sprintf("#%d  %s  %s  %s", role.ID, role.Name, role.Color, formatPermissions(role.Permissions)),
+			Label: fmt.Sprintf("%s  %s", role.Name, formatPermissions(role.Permissions)),
 			Hint:  "编辑权限",
 			Kind:  panelActionEditRole,
 			ID:    role.ID,
@@ -940,6 +948,57 @@ func runWithAPI(api commandAPI, fn func(commandAPI) commandResultMsg) commandRes
 		return commandResultMsg{Err: fmt.Errorf("API client not configured")}
 	}
 	return fn(api)
+}
+
+func runWithAPIMsg(api commandAPI, fn func(commandAPI) tea.Msg) tea.Msg {
+	if api == nil {
+		return commandResultMsg{Err: fmt.Errorf("API client not configured")}
+	}
+	return fn(api)
+}
+
+func (m Model) hiveLoadedFromDetail(api commandAPI, detail model.HiveDetail, status string) tea.Msg {
+	unreads := map[int64]int{}
+	for _, unread := range detail.Unreads {
+		unreads[unread.ChannelID] = unread.Count
+	}
+	var currentChannelID int64
+	for _, channel := range detail.Channels {
+		if channel.Type == "TEXT" {
+			currentChannelID = channel.ID
+			break
+		}
+	}
+	var messages []model.Message
+	if currentChannelID != 0 {
+		var err error
+		messages, err = api.MessagesBefore(context.Background(), currentChannelID, 0, 50)
+		if err != nil {
+			return commandResultMsg{Err: err}
+		}
+	}
+	return hiveLoadedMsg{
+		HiveID:           detail.ID,
+		HiveName:         detail.Name,
+		Hives:            upsertHive(m.State.Hives, detail),
+		Channels:         detail.Channels,
+		Unreads:          unreads,
+		CurrentChannelID: currentChannelID,
+		Messages:         messages,
+		Status:           status,
+	}
+}
+
+func upsertHive(hives []model.Hive, detail model.HiveDetail) []model.Hive {
+	next := append([]model.Hive(nil), hives...)
+	hive := model.Hive{ID: detail.ID, Name: detail.Name, Description: detail.Description, IconColor: detail.IconColor, OwnerID: detail.OwnerID}
+	for i, existing := range next {
+		if existing.ID == detail.ID {
+			next[i] = hive
+			return next
+		}
+	}
+	return append(next, hive)
 }
 
 func commandHelpLines() []string {
