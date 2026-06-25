@@ -1,0 +1,127 @@
+@startuml YuPeiyuanDetail
+title 虞沛远 yupeiyuan：角色权限、好友与私聊完整类关系
+
+top to bottom direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam classAttributeIconSize 0
+skinparam nodesep 55
+skinparam ranksep 55
+hide empty members
+hide circle
+
+skinparam class {
+  BackgroundColor<<Controller>> #E8F3FF
+  BackgroundColor<<Service>> #EAF7EA
+  BackgroundColor<<Mapper>> #FFF4D8
+  BackgroundColor<<Entity>> #F7F7F7
+  BackgroundColor<<DTO>> #F4EAFE
+  BackgroundColor<<Utility>> #F2F2F2
+  BackgroundColor<<External>> #FFFFFF
+}
+
+legend right
+  虞沛远负责：权限位定义、角色管理、成员角色分配、好友申请处理和私聊频道创建。
+endlegend
+
+package "虞沛远负责包 com.hive.yupeiyuan" as YPY #FFF4D8 {
+  class "FriendController（好友接口）" as FriendController <<Controller>>
+  class "DmController（私聊接口）" as DmController <<Controller>>
+  class "RoleController（角色接口）" as RoleController <<Controller>>
+
+  class "FriendService（好友私聊业务）" as FriendService <<Service>>
+  class "RoleService（角色业务）" as RoleService <<Service>>
+  class "PermissionService（权限校验）" as PermissionService <<Service>>
+  class "Permissions（权限位常量）" as Permissions <<Utility>>
+
+  interface "FriendshipMapper（好友关系表）" as FriendshipMapper <<Mapper>>
+  interface "RoleMapper（角色表）" as RoleMapper <<Mapper>>
+  interface "MemberRoleMapper（成员角色表）" as MemberRoleMapper <<Mapper>>
+
+  class "Friendship（好友关系实体）" as Friendship <<Entity>>
+  class "Role（角色实体）" as Role <<Entity>>
+  class "MemberRole（成员角色实体）" as MemberRole <<Entity>>
+
+  class "FriendVO（好友响应）" as FriendVO <<DTO>>
+  class "FriendRequestVO（好友申请响应）" as FriendRequestVO <<DTO>>
+  class "DmVO（私聊响应）" as DmVO <<DTO>>
+  class "RoleReq（角色请求）" as RoleReq <<DTO>>
+  class "RoleVO（角色响应）" as RoleVO <<DTO>>
+}
+
+package "外部依赖：张致硕 zhangzhishuo" as ZZS_EXT #E8F3FF {
+  class ApiResponse <<External>>
+  class BizException <<External>>
+  interface HiveMapper <<External>>
+  interface HiveMemberMapper <<External>>
+  class Hive <<External>>
+  class HiveMember <<External>>
+}
+
+package "外部依赖：张凯文 zhangkaiwen" as ZKW_EXT #EAF7EA {
+  interface ChannelMapper <<External>>
+  interface ChannelMemberMapper <<External>>
+  class Channel <<External>>
+  class WsPush <<External>>
+}
+
+package "外部依赖：江民智 jiangminzhi" as JMZ_EXT #F4EAFE {
+  annotation CurrentUid
+  interface UserMapper <<External>>
+  class UserService <<External>>
+  class User <<External>>
+  class UserVO <<External>>
+  class "AppEvents.FriendAccepted" as FriendAcceptedEvent <<External>>
+}
+
+FriendController ..> ApiResponse
+DmController ..> ApiResponse
+RoleController ..> ApiResponse
+FriendController ..> CurrentUid
+DmController ..> CurrentUid
+RoleController ..> CurrentUid
+
+FriendController --> FriendService : 好友接口
+DmController --> FriendService : 私聊接口
+FriendService --> FriendshipMapper : 好友关系持久化
+FriendService --> ChannelMemberMapper : 私聊成员
+FriendService --> ChannelMapper : 私聊频道
+FriendService --> UserMapper : 用户查询
+FriendService --> UserService : 用户资料
+FriendService --> WsPush : 好友私聊通知
+FriendService ..> BizException
+FriendService ..> Channel
+FriendService ..> User
+FriendService ..> UserVO
+FriendService ..> FriendAcceptedEvent : 发布
+FriendService ..> FriendVO
+FriendService ..> FriendRequestVO
+FriendService ..> DmVO
+
+RoleController --> RoleService : 角色接口
+RoleService --> RoleMapper : 角色持久化
+RoleService --> MemberRoleMapper : 成员角色分配
+RoleService --> PermissionService : 管理角色权限
+RoleService --> WsPush : 角色变更通知
+RoleService ..> BizException
+RoleService ..> RoleReq
+RoleService ..> RoleVO
+
+PermissionService --> HiveMapper : 蜂巢归属
+PermissionService --> HiveMemberMapper : 成员身份
+PermissionService --> RoleMapper : 有效权限
+PermissionService ..> BizException
+PermissionService ..> Hive
+PermissionService ..> HiveMember
+PermissionService ..> Permissions : 权限位规则
+
+FriendshipMapper ..> Friendship
+FriendshipMapper ..> FriendVO
+FriendshipMapper ..> FriendRequestVO
+RoleMapper ..> Role
+RoleMapper ..> RoleVO
+MemberRoleMapper ..> MemberRole
+
+@enduml

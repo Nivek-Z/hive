@@ -1,0 +1,154 @@
+@startuml ZhangZhishuoDetail
+title 张致硕 zhangzhishuo：蜂巢管理与文件上传完整类关系
+
+top to bottom direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam classAttributeIconSize 0
+skinparam nodesep 55
+skinparam ranksep 55
+hide empty members
+hide circle
+
+skinparam class {
+  BackgroundColor<<Controller>> #E8F3FF
+  BackgroundColor<<Service>> #EAF7EA
+  BackgroundColor<<Mapper>> #FFF4D8
+  BackgroundColor<<Entity>> #F7F7F7
+  BackgroundColor<<DTO>> #F4EAFE
+  BackgroundColor<<Common>> #FDEEEE
+  BackgroundColor<<Utility>> #F2F2F2
+  BackgroundColor<<External>> #FFFFFF
+}
+
+legend right
+  张致硕负责：蜂巢创建和维护、成员管理、邀请加入、文件上传、统一响应和异常处理。
+  实线表示直接调用或构造器依赖，虚线表示 DTO、事件、注解或轻量使用。
+endlegend
+
+package "张致硕负责包 com.hive.zhangzhishuo" as ZZS #E8F3FF {
+  class "ApiResponse<T>（统一响应）" as ApiResponse <<DTO>>
+  class "BizException（业务异常）" as BizException <<Common>>
+  class "GlobalExceptionHandler（异常处理）" as GlobalExceptionHandler <<Common>>
+  class "Ids（邀请码工具）" as Ids <<Utility>>
+  class "DemoDataSeeder（演示数据）" as DemoDataSeeder <<Utility>>
+
+  class "HiveController（蜂巢接口）" as HiveController <<Controller>>
+  class "InviteController（邀请接口）" as InviteController <<Controller>>
+  class "FileController（文件上传接口）" as FileController <<Controller>>
+
+  class "HiveService（蜂巢业务）" as HiveService <<Service>>
+
+  interface "HiveMapper（蜂巢表）" as HiveMapper <<Mapper>>
+  interface "HiveMemberMapper（蜂巢成员表）" as HiveMemberMapper <<Mapper>>
+  interface "InviteMapper（邀请表）" as InviteMapper <<Mapper>>
+  interface "FileMapper（文件表）" as FileMapper <<Mapper>>
+
+  class "Hive（蜂巢实体）" as Hive <<Entity>>
+  class "HiveMember（蜂巢成员实体）" as HiveMember <<Entity>>
+  class "Invite（邀请实体）" as Invite <<Entity>>
+  class "StoredFile（文件实体）" as StoredFile <<Entity>>
+
+  class "HiveReq（蜂巢请求）" as HiveReq <<DTO>>
+  class "HiveVO（蜂巢响应）" as HiveVO <<DTO>>
+  class "HiveDetailVO（蜂巢详情）" as HiveDetailVO <<DTO>>
+  class "MemberVO（成员响应）" as MemberVO <<DTO>>
+  class "CreateInviteReq（创建邀请请求）" as CreateInviteReq <<DTO>>
+  class "InviteVO（邀请响应）" as InviteVO <<DTO>>
+  class "MuteReq（禁言请求）" as MuteReq <<DTO>>
+}
+
+package "外部依赖：张凯文 zhangkaiwen" as ZKW_EXT #EAF7EA {
+  class ChannelService <<External>>
+  class MessageService <<External>>
+  class WsPush <<External>>
+  interface ChannelMapper <<External>>
+  interface MessageMapper <<External>>
+  class Channel <<External>>
+  class CreateChannelReq <<External>>
+  class ChannelVO <<External>>
+  class UnreadRow <<External>>
+}
+
+package "外部依赖：虞沛远 yupeiyuan" as YPY_EXT #FFF4D8 {
+  class PermissionService <<External>>
+  class Permissions <<External>>
+  interface RoleMapper <<External>>
+  interface MemberRoleMapper <<External>>
+  class MemberRole <<External>>
+  class Role <<External>>
+  class RoleVO <<External>>
+}
+
+package "外部依赖：江民智 jiangminzhi" as JMZ_EXT #F4EAFE {
+  annotation CurrentUid
+  interface UserMapper <<External>>
+  class User <<External>>
+  class "AppEvents.HiveCreated" as HiveCreatedEvent <<External>>
+}
+
+GlobalExceptionHandler ..> ApiResponse : 统一错误响应
+GlobalExceptionHandler ..> BizException : 捕获业务异常
+
+HiveController ..> ApiResponse
+InviteController ..> ApiResponse
+FileController ..> ApiResponse
+HiveController --> HiveService : 蜂巢和成员接口
+InviteController --> HiveService : 邀请码加入
+FileController --> FileMapper : 保存上传元数据
+
+HiveController ..> CurrentUid
+InviteController ..> CurrentUid
+FileController ..> CurrentUid
+HiveController ..> HiveReq
+HiveController ..> MuteReq
+HiveController ..> CreateInviteReq
+
+HiveService --> HiveMapper : 蜂巢持久化
+HiveService --> HiveMemberMapper : 成员持久化
+HiveService --> InviteMapper : 邀请码持久化
+HiveService --> ChannelMapper : 默认频道
+HiveService --> MessageMapper : 消息清理和统计
+HiveService --> RoleMapper : 默认角色
+HiveService --> MemberRoleMapper : 成员角色
+HiveService --> UserMapper : 用户查询
+HiveService --> PermissionService : 权限校验
+HiveService --> MessageService : 系统消息
+HiveService --> WsPush : 变更推送
+HiveService ..> HiveCreatedEvent : 发布事件
+HiveService ..> Permissions : 权限位
+HiveService ..> HiveDetailVO
+HiveService ..> HiveVO
+HiveService ..> MemberVO
+HiveService ..> InviteVO
+HiveService ..> Ids : 生成邀请码
+HiveService ..> Channel
+HiveService ..> ChannelVO
+HiveService ..> Role
+HiveService ..> RoleVO
+HiveService ..> MemberRole
+HiveService ..> UnreadRow
+
+DemoDataSeeder --> UserMapper : 初始化用户
+DemoDataSeeder --> HiveMemberMapper : 初始化成员
+DemoDataSeeder --> HiveService : 初始化蜂巢
+DemoDataSeeder --> ChannelService : 初始化频道
+DemoDataSeeder --> MessageService : 初始化消息
+DemoDataSeeder ..> User
+DemoDataSeeder ..> Channel
+DemoDataSeeder ..> CreateChannelReq
+DemoDataSeeder ..> ChannelVO
+
+HiveMapper ..> Hive
+HiveMemberMapper ..> HiveMember
+HiveMemberMapper ..> MemberVO
+InviteMapper ..> Invite
+InviteMapper ..> InviteVO
+FileMapper ..> StoredFile
+HiveDetailVO ..> ChannelVO
+HiveDetailVO ..> RoleVO
+HiveDetailVO ..> UnreadRow
+
+@enduml

@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Java 程序设计大作业
  */
 @SpringBootApplication
-@MapperScan("com.hive.mapper")
+@MapperScan("com.hive")
 public class HiveApplication {
 
     public static void main(String[] args) {
