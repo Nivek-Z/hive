@@ -1,0 +1,135 @@
+@startuml
+' 这张图是新增版本：跨组接口调用关系，原 06-cross-member-relationships.puml 不修改
+!pragma layout smetana
+left to right direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+hide empty members
+skinparam shadowing false
+skinparam class {
+  BackgroundColor<<ServiceInterface>> #FFF7D6
+  BackgroundColor<<ServiceImpl>> #E9F7EF
+  BackgroundColor<<Mapper>> #F5E8FF
+  BackgroundColor<<Infra>> #F2F2F2
+  BorderColor #555555
+}
+
+title 跨组调用关系汇总（只画跨包依赖，避免线条和组内关系混在一起）
+
+legend left
+  每个组内的 Controller/DTO/实体关系见第 2-5 张
+  本图只保留跨组 Service、Mapper、推送、事件依赖
+  虚线空心三角表示 Impl 实现接口；实线表示跨组调用或构造注入
+endlegend
+
+package "张致硕 zhangzhishuo" as ZZS {
+  interface HiveService <<ServiceInterface>>
+  class HiveServiceImpl <<ServiceImpl>>
+  interface FileService <<ServiceInterface>>
+  class FileServiceImpl <<ServiceImpl>>
+  interface HiveMapper <<Mapper>>
+  interface HiveMemberMapper <<Mapper>>
+  interface InviteMapper <<Mapper>>
+  interface FileMapper <<Mapper>>
+}
+
+package "张凯文 zhangkaiwen" as ZKW {
+  interface ChannelService <<ServiceInterface>>
+  class ChannelServiceImpl <<ServiceImpl>>
+  interface MessageService <<ServiceInterface>>
+  class MessageServiceImpl <<ServiceImpl>>
+  interface CommandService <<ServiceInterface>>
+  class CommandServiceImpl <<ServiceImpl>>
+  interface ChannelMapper <<Mapper>>
+  interface ChannelMemberMapper <<Mapper>>
+  interface MessageMapper <<Mapper>>
+  interface ReactionMapper <<Mapper>>
+  interface ReadStateMapper <<Mapper>>
+  class ChatWebSocketHandler <<Infra>>
+  class WsPush <<Infra>>
+  class WsAuthInterceptor <<Infra>>
+}
+
+package "虞沛远 yupeiyuan" as YPY {
+  interface FriendService <<ServiceInterface>>
+  class FriendServiceImpl <<ServiceImpl>>
+  interface RoleService <<ServiceInterface>>
+  class RoleServiceImpl <<ServiceImpl>>
+  interface PermissionService <<ServiceInterface>>
+  class PermissionServiceImpl <<ServiceImpl>>
+  interface FriendshipMapper <<Mapper>>
+  interface RoleMapper <<Mapper>>
+  interface MemberRoleMapper <<Mapper>>
+}
+
+package "江民智 jiangminzhi" as JMZ {
+  interface AuthService <<ServiceInterface>>
+  class AuthServiceImpl <<ServiceImpl>>
+  interface UserService <<ServiceInterface>>
+  class UserServiceImpl <<ServiceImpl>>
+  interface AchievementService <<ServiceInterface>>
+  class AchievementServiceImpl <<ServiceImpl>>
+  interface UserMapper <<Mapper>>
+  interface AchievementMapper <<Mapper>>
+  class JwtUtil <<Infra>>
+  class AppEvents <<Infra>>
+}
+
+HiveServiceImpl ..|> HiveService : 实现
+FileServiceImpl ..|> FileService : 实现
+ChannelServiceImpl ..|> ChannelService : 实现
+MessageServiceImpl ..|> MessageService : 实现
+CommandServiceImpl ..|> CommandService : 实现
+FriendServiceImpl ..|> FriendService : 实现
+RoleServiceImpl ..|> RoleService : 实现
+PermissionServiceImpl ..|> PermissionService : 实现
+AuthServiceImpl ..|> AuthService : 实现
+UserServiceImpl ..|> UserService : 实现
+AchievementServiceImpl ..|> AchievementService : 实现
+
+HiveServiceImpl --> PermissionService : 蜂巢操作前权限校验
+HiveServiceImpl --> MessageService : 创建/成员变化系统消息
+HiveServiceImpl --> ChannelMapper : 默认频道维护
+HiveServiceImpl --> MessageMapper : 删除蜂巢清理消息
+HiveServiceImpl --> UserMapper : 成员资料查询
+HiveServiceImpl --> RoleMapper : 默认角色
+HiveServiceImpl --> MemberRoleMapper : 绑定默认角色
+HiveServiceImpl --> WsPush : 推送蜂巢变化
+HiveServiceImpl ..> AppEvents : 发布 HiveCreated
+
+ChannelServiceImpl --> PermissionService : 频道管理权限
+ChannelServiceImpl --> WsPush : 推送频道变化
+MessageServiceImpl --> PermissionService : 发言/读消息权限
+MessageServiceImpl --> CommandService : 解析斜杠命令
+MessageServiceImpl --> UserMapper : 消息发送者资料
+MessageServiceImpl --> WsPush : 推送消息/回应
+MessageServiceImpl ..> AppEvents : 发布 MessageSent 和 ReactionAdded
+ChatWebSocketHandler --> MessageService : WebSocket 发消息
+ChatWebSocketHandler --> UserMapper : 连接用户资料
+WsPush --> HiveMemberMapper : 蜂巢成员广播范围
+WsAuthInterceptor --> JwtUtil : 握手认证
+CommandServiceImpl ..> AppEvents : 发布 DiceRolled
+
+FriendServiceImpl --> ChannelMapper : 创建私聊频道
+FriendServiceImpl --> ChannelMemberMapper : 维护私聊成员
+FriendServiceImpl --> UserMapper : 查找好友用户
+FriendServiceImpl --> UserService : 组装好友资料
+FriendServiceImpl --> WsPush : 推送好友/私聊变化
+FriendServiceImpl ..> AppEvents : 发布 FriendAccepted
+RoleServiceImpl --> WsPush : 推送角色变化
+PermissionServiceImpl --> HiveMapper : 蜂巢存在性
+PermissionServiceImpl --> HiveMemberMapper : 成员身份
+
+AuthServiceImpl --> JwtUtil : 生成登录令牌
+AuthServiceImpl ..> AppEvents : 发布 UserLoggedIn
+AchievementServiceImpl --> MessageMapper : 消息统计
+AchievementServiceImpl --> ReactionMapper : 回应统计
+AchievementServiceImpl --> FriendshipMapper : 好友统计
+AchievementServiceImpl --> UserMapper : 用户校验
+AchievementServiceImpl --> WsPush : 成就解锁通知
+AchievementServiceImpl ..> AppEvents : 监听领域事件
+
+FileServiceImpl --> FileMapper : 文件元数据持久化
+
+@enduml

@@ -1,18 +1,20 @@
 package com.hive.zhangkaiwen;
 
-import java.util.List;
+import com.hive.zhangzhishuo.BizException;
+import com.hive.yupeiyuan.PermissionService;
+import com.hive.yupeiyuan.Permissions;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 
-/**
- * 张凯文负责：频道树和群中群结构。
- */
 public interface ChannelService {
 
-    Map<String, Object> createChannel(long operatorId, long hiveId, Map<String, Object> request);
+    ChannelVO create(long uid, long hiveId, CreateChannelReq req);
 
-    List<Map<String, Object>> listChannels(long operatorId, long hiveId);
+    ChannelVO update(long uid, long channelId, UpdateChannelReq req);
 
-    void updateChannel(long operatorId, long channelId, Map<String, Object> request);
+    void delete(long uid, long channelId);
 
-    void deleteChannel(long operatorId, long channelId);
+    Channel requireChannel(long channelId);
+
 }

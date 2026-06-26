@@ -1,11 +1,18 @@
 package com.hive.zhangkaiwen;
 
-import java.util.Optional;
+import com.hive.zhangzhishuo.BizException;
+import com.hive.jiangminzhi.AppEvents;
+import com.hive.jiangminzhi.User;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import java.time.LocalDate;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * 张凯文负责：聊天斜杠命令的解析和结果生成。
- */
 public interface CommandService {
 
-    Optional<String> tryExecute(long userId, String rawContent);
+    boolean isCommand(String content);
+
+    String execute(User sender, String content);
+
 }

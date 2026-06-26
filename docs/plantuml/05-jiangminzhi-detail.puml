@@ -1,0 +1,135 @@
+@startuml JiangMinzhiDetail
+title 江民智 jiangminzhi：用户认证、成就与 Web 配置完整类关系
+
+top to bottom direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam classAttributeIconSize 0
+skinparam nodesep 55
+skinparam ranksep 55
+hide empty members
+hide circle
+
+skinparam class {
+  BackgroundColor<<Controller>> #E8F3FF
+  BackgroundColor<<Service>> #EAF7EA
+  BackgroundColor<<Mapper>> #FFF4D8
+  BackgroundColor<<Entity>> #F7F7F7
+  BackgroundColor<<DTO>> #F4EAFE
+  BackgroundColor<<Config>> #EFFFF9
+  BackgroundColor<<Utility>> #F2F2F2
+  BackgroundColor<<Event>> #FFF0F5
+  BackgroundColor<<External>> #FFFFFF
+}
+
+legend right
+  江民智负责：注册登录、JWT、当前用户注解、用户资料、密码修改、Web 配置和成就事件监听。
+endlegend
+
+package "江民智负责包 com.hive.jiangminzhi" as JMZ #F4EAFE {
+  class "AuthController（认证接口）" as AuthController <<Controller>>
+  class "UserController（用户接口）" as UserController <<Controller>>
+  class "AchievementController（成就接口）" as AchievementController <<Controller>>
+
+  class "AuthService（认证业务）" as AuthService <<Service>>
+  class "UserService（用户业务）" as UserService <<Service>>
+  class "AchievementService（成就业务）" as AchievementService <<Service>>
+
+  interface "UserMapper（用户表）" as UserMapper <<Mapper>>
+  interface "AchievementMapper（成就表）" as AchievementMapper <<Mapper>>
+
+  class "User（用户实体）" as User <<Entity>>
+
+  class "LoginReq（登录请求）" as LoginReq <<DTO>>
+  class "LoginResp（登录响应）" as LoginResp <<DTO>>
+  class "RegisterReq（注册请求）" as RegisterReq <<DTO>>
+  class "ChangePasswordReq（改密请求）" as ChangePasswordReq <<DTO>>
+  class "UpdateProfileReq（资料更新请求）" as UpdateProfileReq <<DTO>>
+  class "UserVO（用户响应）" as UserVO <<DTO>>
+  class "AchievementVO（成就响应）" as AchievementVO <<DTO>>
+
+  class "JwtUtil（JWT 工具）" as JwtUtil <<Utility>>
+  annotation "CurrentUid（当前用户注解）" as CurrentUid
+  class "CurrentUidResolver（参数解析器）" as CurrentUidResolver <<Config>>
+  class "AuthInterceptor（登录拦截器）" as AuthInterceptor <<Config>>
+  class "WebConfig（Web MVC 配置）" as WebConfig <<Config>>
+
+  class "AppEvents（事件容器）" as AppEvents <<Event>>
+  class "AppEvents.MessageSent" as MessageSentEvent <<Event>>
+  class "AppEvents.ReactionAdded" as ReactionAddedEvent <<Event>>
+  class "AppEvents.FriendAccepted" as FriendAcceptedEvent <<Event>>
+  class "AppEvents.HiveCreated" as HiveCreatedEvent <<Event>>
+  class "AppEvents.DiceRolled" as DiceRolledEvent <<Event>>
+  class "AppEvents.UserLoggedIn" as UserLoggedInEvent <<Event>>
+}
+
+package "外部依赖：张致硕 zhangzhishuo" as ZZS_EXT #E8F3FF {
+  class ApiResponse <<External>>
+  class BizException <<External>>
+}
+
+package "外部依赖：张凯文 zhangkaiwen" as ZKW_EXT #EAF7EA {
+  interface MessageMapper <<External>>
+  interface ReactionMapper <<External>>
+  class WsPush <<External>>
+}
+
+package "外部依赖：虞沛远 yupeiyuan" as YPY_EXT #FFF4D8 {
+  interface FriendshipMapper <<External>>
+}
+
+AuthController ..> ApiResponse
+UserController ..> ApiResponse
+AchievementController ..> ApiResponse
+UserController ..> CurrentUid
+AchievementController ..> CurrentUid
+
+AuthController --> AuthService : 注册登录
+AuthService --> UserMapper : 账号持久化
+AuthService --> JwtUtil : token 签发
+AuthService ..> BizException
+AuthService ..> RegisterReq
+AuthService ..> LoginReq
+AuthService ..> LoginResp
+AuthService ..> UserLoggedInEvent : 发布
+
+UserController --> UserService : 资料密码接口
+UserService --> UserMapper : 用户持久化
+UserService ..> BizException
+UserService ..> UserVO
+UserController ..> UpdateProfileReq
+UserController ..> ChangePasswordReq
+
+AchievementController --> AchievementService : 成就接口
+AchievementService --> AchievementMapper : 成就状态
+AchievementService --> MessageMapper : 消息统计
+AchievementService --> ReactionMapper : 回应统计
+AchievementService --> FriendshipMapper : 好友统计
+AchievementService --> UserMapper : 用户查询
+AchievementService --> WsPush : 成就解锁推送
+AchievementService ..> MessageSentEvent : 监听
+AchievementService ..> ReactionAddedEvent : 监听
+AchievementService ..> FriendAcceptedEvent : 监听
+AchievementService ..> HiveCreatedEvent : 监听
+AchievementService ..> DiceRolledEvent : 监听
+AchievementService ..> UserLoggedInEvent : 监听
+AchievementService ..> AchievementVO
+
+WebConfig --> AuthInterceptor : 注册拦截器
+WebConfig --> CurrentUidResolver : 注册参数解析器
+AuthInterceptor --> JwtUtil : 验证 token
+CurrentUidResolver ..> CurrentUid : 解析注解
+
+LoginResp ..> UserVO
+UserMapper ..> User
+AchievementMapper ..> AchievementVO
+AppEvents *-- MessageSentEvent
+AppEvents *-- ReactionAddedEvent
+AppEvents *-- FriendAcceptedEvent
+AppEvents *-- HiveCreatedEvent
+AppEvents *-- DiceRolledEvent
+AppEvents *-- UserLoggedInEvent
+
+@enduml

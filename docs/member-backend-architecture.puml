@@ -1,0 +1,39 @@
+@startuml MemberBackendArchitectureIndex
+title Hive 后端 PlantUML 图索引
+
+skinparam shadowing false
+skinparam defaultFontName Microsoft YaHei
+skinparam packageStyle rectangle
+
+legend right
+  Kroki 单次渲染大文件容易超限。
+  本文件只作为索引，请分别渲染下列小文件。
+endlegend
+
+rectangle "01-overview.puml\n总体功能与组员分工" as Overview #E8F3FF
+rectangle "02-zhangzhishuo-detail.puml\n张致硕：蜂巢管理、邀请、文件上传" as ZZS #E8F3FF
+rectangle "03-zhangkaiwen-detail.puml\n张凯文：频道、消息、全文检索、WebSocket" as ZKW #EAF7EA
+rectangle "04-yupeiyuan-detail.puml\n虞沛远：角色权限、好友、私聊" as YPY #FFF4D8
+rectangle "05-jiangminzhi-detail.puml\n江民智：认证、用户、成就、Web 配置" as JMZ #F4EAFE
+rectangle "06-cross-member-relationships.puml\n跨组调用关系汇总" as Cross #F7F7F7
+
+Overview --> ZZS : 展开负责模块
+Overview --> ZKW : 展开负责模块
+Overview --> YPY : 展开负责模块
+Overview --> JMZ : 展开负责模块
+ZZS ..> Cross : 查看跨组依赖
+ZKW ..> Cross : 查看跨组依赖
+YPY ..> Cross : 查看跨组依赖
+JMZ ..> Cross : 查看跨组依赖
+
+note bottom
+  文件位置：
+  docs/plantuml/01-overview.puml
+  docs/plantuml/02-zhangzhishuo-detail.puml
+  docs/plantuml/03-zhangkaiwen-detail.puml
+  docs/plantuml/04-yupeiyuan-detail.puml
+  docs/plantuml/05-jiangminzhi-detail.puml
+  docs/plantuml/06-cross-member-relationships.puml
+end note
+
+@enduml

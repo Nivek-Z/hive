@@ -1,0 +1,104 @@
+@startuml MemberBackendOverview
+title Hive 后端总体功能与组员分工
+
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam nodesep 70
+skinparam ranksep 70
+
+legend right
+  == 系统目标 ==
+  实现实时网络聊天室后端：
+  用户认证、蜂巢、频道、消息、全文检索、
+  角色权限、好友私聊、文件上传、成就和 WebSocket 推送。
+
+  == 箭头含义 ==
+  --> 主要业务调用
+  ..> 数据、事件或轻量依赖
+endlegend
+
+class "HiveApplication（启动入口）" as HiveApplication
+
+package "张致硕 zhangzhishuo：蜂巢管理、邀请、文件上传" as ZZS #E8F3FF {
+  class "HiveController（蜂巢接口）" as ZZS_HiveController
+  class "InviteController（邀请接口）" as ZZS_InviteController
+  class "FileController（文件上传接口）" as ZZS_FileController
+  class "HiveService（蜂巢业务编排）" as ZZS_HiveService
+  interface "HiveMapper 等数据接口" as ZZS_Mappers
+}
+
+package "张凯文 zhangkaiwen：频道、消息、搜索、WebSocket" as ZKW #EAF7EA {
+  class "ChannelController（频道接口）" as ZKW_ChannelController
+  class "MessageController（消息接口）" as ZKW_MessageController
+  class "SearchController（搜索统计接口）" as ZKW_SearchController
+  class "ChannelService（频道业务）" as ZKW_ChannelService
+  class "MessageService（消息业务）" as ZKW_MessageService
+  class "WsPush（实时推送）" as ZKW_WsPush
+  interface "MessageMapper 等数据接口" as ZKW_Mappers
+}
+
+package "虞沛远 yupeiyuan：角色权限、好友、私聊" as YPY #FFF4D8 {
+  class "RoleController（角色接口）" as YPY_RoleController
+  class "FriendController（好友接口）" as YPY_FriendController
+  class "DmController（私聊接口）" as YPY_DmController
+  class "PermissionService（权限校验）" as YPY_PermissionService
+  class "RoleService（角色业务）" as YPY_RoleService
+  class "FriendService（好友私聊业务）" as YPY_FriendService
+  interface "RoleMapper 等数据接口" as YPY_Mappers
+}
+
+package "江民智 jiangminzhi：认证、用户、成就、Web 配置" as JMZ #F4EAFE {
+  class "AuthController（注册登录接口）" as JMZ_AuthController
+  class "UserController（用户接口）" as JMZ_UserController
+  class "AchievementController（成就接口）" as JMZ_AchievementController
+  class "AuthService（认证业务）" as JMZ_AuthService
+  class "UserService（用户业务）" as JMZ_UserService
+  class "AchievementService（成就业务）" as JMZ_AchievementService
+  interface "UserMapper 等数据接口" as JMZ_Mappers
+}
+
+HiveApplication --> ZZS : 扫描并启动
+HiveApplication --> ZKW : 扫描并启动
+HiveApplication --> YPY : 扫描并启动
+HiveApplication --> JMZ : 扫描并启动
+
+ZZS_HiveController --> ZZS_HiveService
+ZZS_InviteController --> ZZS_HiveService
+ZZS_FileController --> ZZS_Mappers
+ZZS_HiveService --> ZZS_Mappers
+ZZS_HiveService --> ZKW_ChannelService : 默认频道
+ZZS_HiveService --> ZKW_MessageService : 系统消息
+ZZS_HiveService --> ZKW_WsPush : 蜂巢变更推送
+ZZS_HiveService --> YPY_PermissionService : 权限校验
+ZZS_HiveService --> YPY_Mappers : 角色与成员角色
+ZZS_HiveService --> JMZ_Mappers : 用户查询
+
+ZKW_ChannelController --> ZKW_ChannelService
+ZKW_MessageController --> ZKW_MessageService
+ZKW_SearchController --> ZKW_Mappers
+ZKW_ChannelService --> YPY_PermissionService : 频道权限
+ZKW_MessageService --> YPY_PermissionService : 消息权限
+ZKW_MessageService --> JMZ_Mappers : 作者信息
+ZKW_MessageService --> ZKW_WsPush : 实时消息
+ZKW_WsPush --> ZZS_Mappers : 接收成员
+
+YPY_RoleController --> YPY_RoleService
+YPY_FriendController --> YPY_FriendService
+YPY_DmController --> YPY_FriendService
+YPY_RoleService --> YPY_PermissionService
+YPY_FriendService --> ZKW_Mappers : 私聊频道
+YPY_FriendService --> JMZ_UserService : 用户资料
+YPY_FriendService --> ZKW_WsPush : 好友私聊通知
+YPY_PermissionService --> ZZS_Mappers : 蜂巢成员权限
+
+JMZ_AuthController --> JMZ_AuthService
+JMZ_UserController --> JMZ_UserService
+JMZ_AchievementController --> JMZ_AchievementService
+JMZ_AchievementService --> ZKW_Mappers : 消息统计
+JMZ_AchievementService --> YPY_Mappers : 好友统计
+JMZ_AchievementService --> ZKW_WsPush : 成就推送
+
+@enduml

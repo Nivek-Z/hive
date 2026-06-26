@@ -1,0 +1,141 @@
+@startuml
+' 这张图是新增版本：张致硕负责包的接口实现版，原 02-zhangzhishuo-detail.puml 不修改
+!pragma layout smetana
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+hide empty members
+skinparam shadowing false
+skinparam class {
+  BackgroundColor<<Controller>> #E8F2FF
+  BackgroundColor<<ServiceInterface>> #FFF7D6
+  BackgroundColor<<ServiceImpl>> #E9F7EF
+  BackgroundColor<<Mapper>> #F5E8FF
+  BackgroundColor<<Entity>> #FFFFFF
+  BackgroundColor<<DTO>> #FFF1E6
+  BackgroundColor<<Infra>> #F2F2F2
+  BorderColor #555555
+}
+
+title 张致硕 zhangzhishuo：蜂巢管理、邀请、文件上传、通用响应
+
+legend left
+  主功能：创建/维护蜂巢，成员管理，邀请加入，文件上传，统一响应与异常处理
+  规范链路：Controller -> Service 接口 -> ServiceImpl -> Mapper / 跨组服务
+endlegend
+
+package "入口层 Controller" {
+  class HiveController <<Controller>>
+  class InviteController <<Controller>>
+  class FileController <<Controller>>
+}
+
+package "抽象服务接口" {
+  interface HiveService <<ServiceInterface>>
+  interface FileService <<ServiceInterface>>
+}
+
+package "服务实现" {
+  class HiveServiceImpl <<ServiceImpl>>
+  class FileServiceImpl <<ServiceImpl>>
+  class DemoDataSeeder <<Infra>>
+}
+
+package "数据访问 Mapper" {
+  interface HiveMapper <<Mapper>>
+  interface HiveMemberMapper <<Mapper>>
+  interface InviteMapper <<Mapper>>
+  interface FileMapper <<Mapper>>
+}
+
+package "领域实体" {
+  class Hive <<Entity>>
+  class HiveMember <<Entity>>
+  class Invite <<Entity>>
+  class StoredFile <<Entity>>
+}
+
+package "请求与响应对象" {
+  class HiveReq <<DTO>>
+  class HiveVO <<DTO>>
+  class HiveDetailVO <<DTO>>
+  class MemberVO <<DTO>>
+  class MuteReq <<DTO>>
+  class CreateInviteReq <<DTO>>
+  class InviteVO <<DTO>>
+  class FileVO <<DTO>>
+  class ApiResponse <<DTO>>
+}
+
+package "公共基础设施" {
+  class BizException <<Infra>>
+  class GlobalExceptionHandler <<Infra>>
+}
+
+package "跨组依赖，只展示调用边界" {
+  interface PermissionService <<ServiceInterface>>
+  interface MessageService <<ServiceInterface>>
+  interface ChannelMapper <<Mapper>>
+  interface MessageMapper <<Mapper>>
+  interface UserMapper <<Mapper>>
+  interface RoleMapper <<Mapper>>
+  interface MemberRoleMapper <<Mapper>>
+  class ChannelVO <<DTO>>
+  class RoleVO <<DTO>>
+  class UnreadRow <<DTO>>
+  class WsPush <<Infra>>
+  class AppEvents <<Infra>>
+}
+
+HiveController --> HiveService : 蜂巢增删改查
+InviteController --> HiveService : 邀请创建/查询/加入
+FileController --> FileService : 文件上传
+
+HiveServiceImpl ..|> HiveService : 实现
+FileServiceImpl ..|> FileService : 实现
+DemoDataSeeder --> HiveService : 初始化蜂巢
+DemoDataSeeder --> MessageService : 初始化消息
+
+HiveService --> HiveReq : 入参
+HiveService --> HiveVO : 返回
+HiveService --> HiveDetailVO : 返回详情
+HiveService --> MemberVO : 返回成员
+HiveService --> CreateInviteReq : 入参
+HiveService --> InviteVO : 返回邀请
+FileService --> FileVO : 返回文件
+
+HiveServiceImpl --> HiveMapper : 蜂巢表
+HiveServiceImpl --> HiveMemberMapper : 成员表
+HiveServiceImpl --> InviteMapper : 邀请表
+HiveServiceImpl --> ChannelMapper : 默认频道
+HiveServiceImpl --> MessageMapper : 删除清理
+HiveServiceImpl --> UserMapper : 成员资料
+HiveServiceImpl --> RoleMapper : 默认角色
+HiveServiceImpl --> MemberRoleMapper : 角色绑定
+HiveServiceImpl --> PermissionService : 权限校验
+HiveServiceImpl --> MessageService : 系统通知
+HiveServiceImpl --> WsPush : 广播成员/蜂巢变化
+HiveServiceImpl ..> AppEvents : 发布领域事件
+FileServiceImpl --> FileMapper : 文件元数据
+
+HiveMapper --> Hive : 持久化
+HiveMapper ..> HiveVO : 查询投影
+HiveMapper ..> HiveDetailVO : 查询投影
+HiveMemberMapper --> HiveMember : 持久化
+HiveMemberMapper ..> MemberVO : 成员投影
+InviteMapper --> Invite : 持久化
+InviteMapper ..> InviteVO : 邀请投影
+FileMapper --> StoredFile : 持久化
+FileMapper ..> FileVO : 文件投影
+
+HiveReq ..> HiveController : 请求体
+MuteReq ..> HiveController : 请求体
+CreateInviteReq ..> InviteController : 请求体
+ApiResponse <.. HiveController : 统一响应
+ApiResponse <.. InviteController : 统一响应
+ApiResponse <.. FileController : 统一响应
+BizException --> GlobalExceptionHandler : 异常被转换
+GlobalExceptionHandler --> ApiResponse : 错误响应
+
+@enduml

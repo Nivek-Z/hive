@@ -1,0 +1,165 @@
+@startuml ZhangKaiwenDetail
+title 张凯文 zhangkaiwen：频道、消息、全文检索与 WebSocket 完整类关系
+
+top to bottom direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam classAttributeIconSize 0
+skinparam nodesep 55
+skinparam ranksep 55
+hide empty members
+hide circle
+
+skinparam class {
+  BackgroundColor<<Controller>> #E8F3FF
+  BackgroundColor<<Service>> #EAF7EA
+  BackgroundColor<<Mapper>> #FFF4D8
+  BackgroundColor<<Entity>> #F7F7F7
+  BackgroundColor<<DTO>> #F4EAFE
+  BackgroundColor<<Config>> #EFFFF9
+  BackgroundColor<<WebSocket>> #EFFFF9
+  BackgroundColor<<External>> #FFFFFF
+}
+
+legend right
+  张凯文负责：频道维护、消息发送读取、表情回应、全文搜索、统计热力图和 WebSocket 实时通信。
+endlegend
+
+package "张凯文负责包 com.hive.zhangkaiwen" as ZKW #EAF7EA {
+  class "ChannelController（频道接口）" as ChannelController <<Controller>>
+  class "MessageController（消息接口）" as MessageController <<Controller>>
+  class "SearchController（搜索统计接口）" as SearchController <<Controller>>
+
+  class "ChannelService（频道业务）" as ChannelService <<Service>>
+  class "MessageService（消息业务）" as MessageService <<Service>>
+  class "CommandService（命令业务）" as CommandService <<Service>>
+
+  class "ChatWebSocketHandler（WebSocket 入口）" as ChatWebSocketHandler <<WebSocket>>
+  class "WsSessionRegistry（会话登记）" as WsSessionRegistry <<WebSocket>>
+  class "WsPush（服务端推送）" as WsPush <<WebSocket>>
+  class "WsConfig（WebSocket 配置）" as WsConfig <<Config>>
+  class "WsAuthInterceptor（握手认证）" as WsAuthInterceptor <<Config>>
+
+  interface "ChannelMapper（频道表）" as ChannelMapper <<Mapper>>
+  interface "ChannelMemberMapper（频道成员表）" as ChannelMemberMapper <<Mapper>>
+  interface "MessageMapper（消息表）" as MessageMapper <<Mapper>>
+  interface "ReactionMapper（回应表）" as ReactionMapper <<Mapper>>
+  interface "ReadStateMapper（已读状态表）" as ReadStateMapper <<Mapper>>
+
+  class "Channel（频道实体）" as Channel <<Entity>>
+  class "Message（消息实体）" as Message <<Entity>>
+
+  class "CreateChannelReq（创建频道请求）" as CreateChannelReq <<DTO>>
+  class "UpdateChannelReq（更新频道请求）" as UpdateChannelReq <<DTO>>
+  class "ChannelVO（频道响应）" as ChannelVO <<DTO>>
+  class "MessageVO（消息响应）" as MessageVO <<DTO>>
+  class "ReactionVO（回应响应）" as ReactionVO <<DTO>>
+  class "ReactionRow（回应统计）" as ReactionRow <<DTO>>
+  class "SearchHit（搜索结果）" as SearchHit <<DTO>>
+  class "HeatRow（热力图行）" as HeatRow <<DTO>>
+  class "NameCount（名称计数）" as NameCount <<DTO>>
+  class "UnreadRow（未读统计）" as UnreadRow <<DTO>>
+}
+
+package "外部依赖：张致硕 zhangzhishuo" as ZZS_EXT #E8F3FF {
+  class ApiResponse <<External>>
+  class BizException <<External>>
+  interface HiveMemberMapper <<External>>
+  class Hive <<External>>
+  class HiveMember <<External>>
+}
+
+package "外部依赖：虞沛远 yupeiyuan" as YPY_EXT #FFF4D8 {
+  class PermissionService <<External>>
+  class Permissions <<External>>
+  class DmVO <<External>>
+}
+
+package "外部依赖：江民智 jiangminzhi" as JMZ_EXT #F4EAFE {
+  annotation CurrentUid
+  class JwtUtil <<External>>
+  interface UserMapper <<External>>
+  class User <<External>>
+  class UserVO <<External>>
+  class AppEvents <<External>>
+  class "AppEvents.MessageSent" as MessageSentEvent <<External>>
+  class "AppEvents.ReactionAdded" as ReactionAddedEvent <<External>>
+  class "AppEvents.DiceRolled" as DiceRolledEvent <<External>>
+}
+
+ChannelController ..> ApiResponse
+MessageController ..> ApiResponse
+SearchController ..> ApiResponse
+ChannelController ..> CurrentUid
+MessageController ..> CurrentUid
+SearchController ..> CurrentUid
+
+ChannelController --> ChannelService : 频道接口
+ChannelService --> ChannelMapper : 频道持久化
+ChannelService --> PermissionService : 管理频道权限
+ChannelService --> WsPush : 频道变更通知
+ChannelService ..> BizException
+ChannelService ..> Permissions
+ChannelService ..> CreateChannelReq
+ChannelService ..> UpdateChannelReq
+ChannelService ..> ChannelVO
+
+MessageController --> MessageService : 消息接口
+MessageService --> MessageMapper : 消息持久化
+MessageService --> ReactionMapper : 表情回应
+MessageService --> ReadStateMapper : 已读状态
+MessageService --> ChannelMapper : 频道查询
+MessageService --> ChannelMemberMapper : 频道和私聊成员
+MessageService --> UserMapper : 作者信息
+MessageService --> PermissionService : 发言和删除权限
+MessageService --> CommandService : 斜杠命令
+MessageService --> WsPush : 实时消息推送
+MessageService ..> BizException
+MessageService ..> Permissions
+MessageService ..> Hive
+MessageService ..> HiveMember
+MessageService ..> User
+MessageService ..> MessageSentEvent : 发布
+MessageService ..> ReactionAddedEvent : 发布
+MessageService ..> MessageVO
+MessageService ..> ReactionVO
+
+SearchController --> MessageMapper : 搜索热力统计
+SearchController --> PermissionService : 搜索权限
+SearchController ..> SearchHit
+SearchController ..> HeatRow
+SearchController ..> NameCount
+
+CommandService ..> BizException
+CommandService ..> AppEvents : 发布命令事件
+CommandService ..> DiceRolledEvent : 发布
+CommandService ..> User
+
+WsConfig --> ChatWebSocketHandler : 注册端点
+WsConfig --> WsAuthInterceptor : 握手认证
+WsAuthInterceptor --> JwtUtil : 解析 token
+ChatWebSocketHandler --> WsSessionRegistry : 绑定会话
+ChatWebSocketHandler --> WsPush : 在线事件
+ChatWebSocketHandler --> MessageService : socket 发消息
+ChatWebSocketHandler --> UserMapper : 当前用户
+ChatWebSocketHandler ..> BizException
+ChatWebSocketHandler ..> User
+ChatWebSocketHandler ..> UserVO
+WsPush --> WsSessionRegistry : 投递在线会话
+WsPush --> HiveMemberMapper : 查接收成员
+
+ChannelMapper ..> Channel
+ChannelMapper ..> ChannelVO
+ChannelMemberMapper ..> DmVO
+MessageMapper ..> Message
+MessageMapper ..> MessageVO
+MessageMapper ..> SearchHit
+MessageMapper ..> HeatRow
+MessageMapper ..> NameCount
+MessageMapper ..> UnreadRow
+ReactionMapper ..> ReactionRow
+ReactionMapper ..> ReactionVO
+
+@enduml

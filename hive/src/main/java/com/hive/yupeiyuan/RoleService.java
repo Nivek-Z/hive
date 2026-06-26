@@ -1,16 +1,24 @@
 package com.hive.yupeiyuan;
 
+import com.hive.zhangzhishuo.BizException;
+import com.hive.zhangkaiwen.WsPush;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-/**
- * 虞沛远负责：角色创建、修改和成员角色分配。
- */
 public interface RoleService {
 
-    Map<String, Object> createRole(long operatorId, long hiveId, Map<String, Object> request);
+    List<RoleVO> list(long uid, long hiveId);
 
-    List<Map<String, Object>> listRoles(long operatorId, long hiveId);
+    RoleVO create(long uid, long hiveId, RoleReq req);
 
-    void updateMemberRoles(long operatorId, long hiveId, long userId, List<Long> roleIds);
+    RoleVO update(long uid, long roleId, RoleReq req);
+
+    void delete(long uid, long roleId);
+
+    void assign(long uid, long hiveId, long targetId, List<Long> roleIds);
+
 }

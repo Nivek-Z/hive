@@ -1,0 +1,158 @@
+@startuml
+' 这张图是新增版本：接口实现版总体图，原 01-overview.puml 不修改
+!pragma layout smetana
+left to right direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+hide empty members
+skinparam shadowing false
+skinparam class {
+  BackgroundColor<<Controller>> #E8F2FF
+  BackgroundColor<<ServiceInterface>> #FFF7D6
+  BackgroundColor<<ServiceImpl>> #E9F7EF
+  BackgroundColor<<Mapper>> #F5E8FF
+  BackgroundColor<<Infra>> #F2F2F2
+  BorderColor #555555
+}
+
+title Hive 后端总体功能与组员分工（Service 接口 + Impl 版）
+
+legend left
+  实线：运行时调用 / 构造注入
+  虚线空心三角：Impl 实现 Service 接口
+  第 2-5 张：每个组员负责包的详细类图
+  第 6 张：跨组调用关系汇总
+endlegend
+
+package "张致硕 zhangzhishuo：蜂巢管理、邀请、文件上传、通用响应" as P_ZZS {
+  class HiveController <<Controller>>
+  class InviteController <<Controller>>
+  class FileController <<Controller>>
+  interface HiveService <<ServiceInterface>>
+  interface FileService <<ServiceInterface>>
+  class HiveServiceImpl <<ServiceImpl>>
+  class FileServiceImpl <<ServiceImpl>>
+  interface HiveMapper <<Mapper>>
+  interface HiveMemberMapper <<Mapper>>
+  interface InviteMapper <<Mapper>>
+  interface FileMapper <<Mapper>>
+  class ApiResponse <<Record>>
+  class BizException
+  class GlobalExceptionHandler <<Infra>>
+}
+
+package "张凯文 zhangkaiwen：频道消息、全文检索、WebSocket" as P_ZKW {
+  class ChannelController <<Controller>>
+  class MessageController <<Controller>>
+  class SearchController <<Controller>>
+  class ChatWebSocketHandler <<Infra>>
+  interface ChannelService <<ServiceInterface>>
+  interface MessageService <<ServiceInterface>>
+  interface CommandService <<ServiceInterface>>
+  class ChannelServiceImpl <<ServiceImpl>>
+  class MessageServiceImpl <<ServiceImpl>>
+  class CommandServiceImpl <<ServiceImpl>>
+  interface ChannelMapper <<Mapper>>
+  interface ChannelMemberMapper <<Mapper>>
+  interface MessageMapper <<Mapper>>
+  interface ReactionMapper <<Mapper>>
+  interface ReadStateMapper <<Mapper>>
+  class WsPush <<Infra>>
+}
+
+package "虞沛远 yupeiyuan：角色权限、好友私聊" as P_YPY {
+  class FriendController <<Controller>>
+  class DmController <<Controller>>
+  class RoleController <<Controller>>
+  interface FriendService <<ServiceInterface>>
+  interface RoleService <<ServiceInterface>>
+  interface PermissionService <<ServiceInterface>>
+  class FriendServiceImpl <<ServiceImpl>>
+  class RoleServiceImpl <<ServiceImpl>>
+  class PermissionServiceImpl <<ServiceImpl>>
+  interface FriendshipMapper <<Mapper>>
+  interface RoleMapper <<Mapper>>
+  interface MemberRoleMapper <<Mapper>>
+}
+
+package "江民智 jiangminzhi：认证用户、成就系统、Web 配置" as P_JMZ {
+  class AuthController <<Controller>>
+  class UserController <<Controller>>
+  class AchievementController <<Controller>>
+  interface AuthService <<ServiceInterface>>
+  interface UserService <<ServiceInterface>>
+  interface AchievementService <<ServiceInterface>>
+  class AuthServiceImpl <<ServiceImpl>>
+  class UserServiceImpl <<ServiceImpl>>
+  class AchievementServiceImpl <<ServiceImpl>>
+  interface UserMapper <<Mapper>>
+  interface AchievementMapper <<Mapper>>
+  class JwtUtil <<Infra>>
+  class WebConfig <<Infra>>
+}
+
+class HiveApplication <<SpringBoot>>
+
+HiveApplication --> P_ZZS : 扫描组件
+HiveApplication --> P_ZKW : 扫描组件
+HiveApplication --> P_YPY : 扫描组件
+HiveApplication --> P_JMZ : 扫描组件
+
+HiveController --> HiveService : 蜂巢 API
+InviteController --> HiveService : 邀请 API
+FileController --> FileService : 文件上传 API
+HiveServiceImpl ..|> HiveService : 实现
+FileServiceImpl ..|> FileService : 实现
+HiveServiceImpl --> HiveMapper : 蜂巢持久化
+HiveServiceImpl --> HiveMemberMapper : 成员持久化
+HiveServiceImpl --> InviteMapper : 邀请持久化
+FileServiceImpl --> FileMapper : 文件元数据
+
+ChannelController --> ChannelService : 频道 API
+MessageController --> MessageService : 消息 API
+SearchController --> MessageMapper : 全文检索
+ChannelServiceImpl ..|> ChannelService : 实现
+MessageServiceImpl ..|> MessageService : 实现
+CommandServiceImpl ..|> CommandService : 实现
+ChannelServiceImpl --> ChannelMapper : 频道持久化
+MessageServiceImpl --> MessageMapper : 消息持久化
+MessageServiceImpl --> ReactionMapper : 表情回应
+MessageServiceImpl --> ReadStateMapper : 已读状态
+ChatWebSocketHandler --> MessageService : WS 发消息
+WsPush --> HiveMemberMapper : 蜂巢成员广播
+
+FriendController --> FriendService : 好友 API
+DmController --> FriendService : 私聊 API
+RoleController --> RoleService : 角色 API
+FriendServiceImpl ..|> FriendService : 实现
+RoleServiceImpl ..|> RoleService : 实现
+PermissionServiceImpl ..|> PermissionService : 实现
+FriendServiceImpl --> FriendshipMapper : 好友持久化
+RoleServiceImpl --> RoleMapper : 角色持久化
+RoleServiceImpl --> MemberRoleMapper : 成员角色
+
+AuthController --> AuthService : 注册登录
+UserController --> UserService : 用户资料
+AchievementController --> AchievementService : 成就查询
+AuthServiceImpl ..|> AuthService : 实现
+UserServiceImpl ..|> UserService : 实现
+AchievementServiceImpl ..|> AchievementService : 实现
+AuthServiceImpl --> UserMapper : 账号持久化
+UserServiceImpl --> UserMapper : 用户持久化
+AchievementServiceImpl --> AchievementMapper : 成就持久化
+AuthServiceImpl --> JwtUtil : 签发令牌
+WebConfig --> JwtUtil : 认证配置
+
+HiveServiceImpl --> PermissionService : 权限校验
+HiveServiceImpl --> MessageService : 系统消息
+MessageServiceImpl --> PermissionService : 发言权限
+MessageServiceImpl --> CommandService : 斜杠命令
+ChannelServiceImpl --> PermissionService : 频道权限
+FriendServiceImpl --> UserService : 用户资料
+RoleServiceImpl --> PermissionService : 角色校验
+AchievementServiceImpl --> MessageMapper : 消息统计
+AchievementServiceImpl --> ReactionMapper : 回应统计
+AchievementServiceImpl --> FriendshipMapper : 好友统计
+
+@enduml

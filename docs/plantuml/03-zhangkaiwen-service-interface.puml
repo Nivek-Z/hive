@@ -1,0 +1,148 @@
+@startuml
+' 这张图是新增版本：张凯文负责包的接口实现版，原 03-zhangkaiwen-detail.puml 不修改
+!pragma layout smetana
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+hide empty members
+skinparam shadowing false
+skinparam class {
+  BackgroundColor<<Controller>> #E8F2FF
+  BackgroundColor<<ServiceInterface>> #FFF7D6
+  BackgroundColor<<ServiceImpl>> #E9F7EF
+  BackgroundColor<<Mapper>> #F5E8FF
+  BackgroundColor<<Entity>> #FFFFFF
+  BackgroundColor<<DTO>> #FFF1E6
+  BackgroundColor<<Infra>> #F2F2F2
+  BorderColor #555555
+}
+
+title 张凯文 zhangkaiwen：频道消息、全文检索、WebSocket 推送
+
+legend left
+  主功能：频道管理，消息收发，表情回应，已读状态，全文检索，WebSocket 实时通信
+  规范链路：Controller / WebSocket -> Service 接口 -> ServiceImpl -> Mapper / 推送组件
+endlegend
+
+package "入口层 Controller 与 WebSocket" {
+  class ChannelController <<Controller>>
+  class MessageController <<Controller>>
+  class SearchController <<Controller>>
+  class ChatWebSocketHandler <<Infra>>
+}
+
+package "抽象服务接口" {
+  interface ChannelService <<ServiceInterface>>
+  interface MessageService <<ServiceInterface>>
+  interface CommandService <<ServiceInterface>>
+}
+
+package "服务实现" {
+  class ChannelServiceImpl <<ServiceImpl>>
+  class MessageServiceImpl <<ServiceImpl>>
+  class CommandServiceImpl <<ServiceImpl>>
+}
+
+package "数据访问 Mapper" {
+  interface ChannelMapper <<Mapper>>
+  interface ChannelMemberMapper <<Mapper>>
+  interface MessageMapper <<Mapper>>
+  interface ReactionMapper <<Mapper>>
+  interface ReadStateMapper <<Mapper>>
+}
+
+package "领域实体与查询行" {
+  class Channel <<Entity>>
+  class Message <<Entity>>
+  class HeatRow <<DTO>>
+  class NameCount <<DTO>>
+  class ReactionRow <<DTO>>
+  class SearchHit <<DTO>>
+  class UnreadRow <<DTO>>
+}
+
+package "请求与响应对象" {
+  class CreateChannelReq <<DTO>>
+  class UpdateChannelReq <<DTO>>
+  class ChannelVO <<DTO>>
+  class MessageVO <<DTO>>
+  class ReactionVO <<DTO>>
+}
+
+package "WebSocket 基础设施" {
+  class WsConfig <<Infra>>
+  class WsAuthInterceptor <<Infra>>
+  class WsPush <<Infra>>
+  class WsSessionRegistry <<Infra>>
+}
+
+package "跨组依赖，只展示调用边界" {
+  interface PermissionService <<ServiceInterface>>
+  interface HiveMemberMapper <<Mapper>>
+  interface UserMapper <<Mapper>>
+  class JwtUtil <<Infra>>
+  class User <<Entity>>
+  class AppEvents <<Infra>>
+}
+
+ChannelController --> ChannelService : 频道增删改
+MessageController --> MessageService : 消息历史/发送/回应/已读
+SearchController --> MessageMapper : 全文检索
+SearchController --> PermissionService : 搜索权限
+ChatWebSocketHandler --> MessageService : WS 发送消息
+ChatWebSocketHandler --> WsPush : 回执/广播
+ChatWebSocketHandler --> WsSessionRegistry : 会话登记
+ChatWebSocketHandler --> UserMapper : 用户资料
+
+ChannelServiceImpl ..|> ChannelService : 实现
+MessageServiceImpl ..|> MessageService : 实现
+CommandServiceImpl ..|> CommandService : 实现
+
+ChannelService --> CreateChannelReq : 入参
+ChannelService --> UpdateChannelReq : 入参
+ChannelService --> ChannelVO : 返回
+MessageService --> MessageVO : 返回
+MessageService --> ReactionVO : 返回
+CommandService --> User : 命令上下文
+
+ChannelServiceImpl --> ChannelMapper : 频道持久化
+ChannelServiceImpl --> PermissionService : 管理权限
+ChannelServiceImpl --> WsPush : 推送频道变化
+MessageServiceImpl --> MessageMapper : 消息持久化
+MessageServiceImpl --> ReactionMapper : 表情回应
+MessageServiceImpl --> ReadStateMapper : 已读状态
+MessageServiceImpl --> ChannelMapper : 频道校验
+MessageServiceImpl --> ChannelMemberMapper : 成员校验
+MessageServiceImpl --> UserMapper : 用户资料
+MessageServiceImpl --> PermissionService : 发言权限
+MessageServiceImpl --> CommandService : 斜杠命令
+MessageServiceImpl --> WsPush : 实时推送
+MessageServiceImpl ..> AppEvents : 发布消息/回应事件
+CommandServiceImpl ..> AppEvents : 发布掷骰事件
+
+ChannelMapper --> Channel : 持久化
+ChannelMapper ..> ChannelVO : 查询投影
+ChannelMemberMapper ..> UnreadRow : 未读查询
+MessageMapper --> Message : 持久化
+MessageMapper ..> MessageVO : 消息投影
+MessageMapper ..> SearchHit : 检索结果
+MessageMapper ..> HeatRow : 热度统计
+MessageMapper ..> NameCount : 统计行
+ReactionMapper ..> ReactionVO : 回应投影
+ReactionMapper ..> ReactionRow : 回应统计
+ReadStateMapper ..> UnreadRow : 已读统计
+
+WsConfig --> ChatWebSocketHandler : 注册处理器
+WsConfig --> WsAuthInterceptor : 注册握手拦截
+WsAuthInterceptor --> JwtUtil : 解析 token
+WsPush --> WsSessionRegistry : 查找在线会话
+WsPush --> HiveMemberMapper : 查找蜂巢成员
+
+CreateChannelReq ..> ChannelController : 请求体
+UpdateChannelReq ..> ChannelController : 请求体
+MessageVO <.. MessageController : 响应体
+ReactionVO <.. MessageController : 响应体
+ChannelVO <.. ChannelController : 响应体
+
+@enduml

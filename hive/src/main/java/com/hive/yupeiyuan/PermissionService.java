@@ -1,13 +1,22 @@
 package com.hive.yupeiyuan;
 
-/**
- * 虞沛远负责：蜂巢内权限判断。
- */
+import com.hive.zhangzhishuo.BizException;
+import com.hive.zhangzhishuo.HiveMapper;
+import com.hive.zhangzhishuo.HiveMemberMapper;
+import com.hive.zhangzhishuo.Hive;
+import com.hive.zhangzhishuo.HiveMember;
+import org.springframework.stereotype.Service;
+
 public interface PermissionService {
 
-    long effectivePermissions(long hiveId, long userId);
+    Hive requireHive(long hiveId);
 
-    boolean hasPermission(long hiveId, long userId, long permissionBit);
+    HiveMember requireMember(long hiveId, long userId);
 
-    void requirePermission(long hiveId, long userId, long permissionBit);
+    long effective(Hive hive, long userId);
+
+    Hive require(long hiveId, long userId, long permissionBit);
+
+    Hive requireOwner(long hiveId, long userId);
+
 }

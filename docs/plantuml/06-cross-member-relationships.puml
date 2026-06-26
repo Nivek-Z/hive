@@ -1,0 +1,122 @@
+@startuml CrossMemberRelationships
+title 跨组调用关系汇总：只画跨包依赖，避免主图线条糅合
+
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam classAttributeIconSize 0
+skinparam nodesep 75
+skinparam ranksep 75
+hide empty members
+hide circle
+
+legend right
+  这张图只展示跨组依赖。
+  每个组员包内的 Controller、Service、Mapper、Entity、DTO 关系在详情图展开。
+endlegend
+
+package "张致硕 zhangzhishuo：蜂巢和上传" as ZZS #E8F3FF {
+  class HiveController <<Controller>>
+  class InviteController <<Controller>>
+  class FileController <<Controller>>
+  class HiveService <<Service>>
+  class DemoDataSeeder <<Utility>>
+  interface HiveMapper <<Mapper>>
+  interface HiveMemberMapper <<Mapper>>
+  interface FileMapper <<Mapper>>
+  class ApiResponse <<DTO>>
+  class BizException <<Common>>
+}
+
+package "张凯文 zhangkaiwen：频道、消息、搜索、WebSocket" as ZKW #EAF7EA {
+  class ChannelService <<Service>>
+  class MessageService <<Service>>
+  class CommandService <<Service>>
+  class ChatWebSocketHandler <<WebSocket>>
+  class WsPush <<WebSocket>>
+  class WsAuthInterceptor <<Config>>
+  interface ChannelMapper <<Mapper>>
+  interface ChannelMemberMapper <<Mapper>>
+  interface MessageMapper <<Mapper>>
+  interface ReactionMapper <<Mapper>>
+}
+
+package "虞沛远 yupeiyuan：权限、好友、私聊" as YPY #FFF4D8 {
+  class PermissionService <<Service>>
+  class RoleService <<Service>>
+  class FriendService <<Service>>
+  interface RoleMapper <<Mapper>>
+  interface MemberRoleMapper <<Mapper>>
+  interface FriendshipMapper <<Mapper>>
+  class Permissions <<Utility>>
+}
+
+package "江民智 jiangminzhi：认证、用户、成就" as JMZ #F4EAFE {
+  class AuthService <<Service>>
+  class UserService <<Service>>
+  class AchievementService <<Service>>
+  class JwtUtil <<Utility>>
+  annotation CurrentUid
+  interface UserMapper <<Mapper>>
+  class User <<Entity>>
+  class UserVO <<DTO>>
+  class AppEvents <<Event>>
+}
+
+HiveController ..> ApiResponse
+InviteController ..> ApiResponse
+FileController ..> ApiResponse
+ChannelService ..> BizException
+MessageService ..> BizException
+CommandService ..> BizException
+PermissionService ..> BizException
+RoleService ..> BizException
+FriendService ..> BizException
+AuthService ..> BizException
+UserService ..> BizException
+
+HiveService --> ChannelMapper : 默认频道
+HiveService --> MessageMapper : 消息清理统计
+HiveService --> MessageService : 系统消息
+HiveService --> WsPush : 蜂巢成员变更推送
+HiveService --> PermissionService : 权限校验
+HiveService --> RoleMapper : 默认角色
+HiveService --> MemberRoleMapper : 角色分配
+HiveService --> UserMapper : 用户查询
+HiveService ..> AppEvents : 发布 HiveCreated
+DemoDataSeeder --> ChannelService : 初始化频道
+DemoDataSeeder --> MessageService : 初始化消息
+DemoDataSeeder --> UserMapper : 初始化用户
+
+ChannelService --> PermissionService : 管理频道权限
+ChannelService ..> Permissions : 权限位
+MessageService --> PermissionService : 发言删除权限
+MessageService ..> Permissions : 权限位
+MessageService --> UserMapper : 作者信息
+MessageService ..> User : 作者模型
+MessageService ..> AppEvents : 发布消息和回应事件
+WsPush --> HiveMemberMapper : 查蜂巢在线接收者
+WsAuthInterceptor --> JwtUtil : WebSocket token
+ChatWebSocketHandler --> UserMapper : 当前用户
+ChatWebSocketHandler ..> UserVO : 用户展示
+
+PermissionService --> HiveMapper : 蜂巢归属
+PermissionService --> HiveMemberMapper : 成员身份
+FriendService --> ChannelMapper : 私聊频道
+FriendService --> ChannelMemberMapper : 私聊成员
+FriendService --> UserMapper : 用户查询
+FriendService --> UserService : 用户资料
+FriendService --> WsPush : 好友私聊通知
+FriendService ..> AppEvents : 发布好友接受事件
+RoleService --> WsPush : 角色变更通知
+
+AchievementService --> MessageMapper : 消息统计
+AchievementService --> ReactionMapper : 回应统计
+AchievementService --> FriendshipMapper : 好友统计
+AchievementService --> WsPush : 成就解锁推送
+AuthService ..> AppEvents : 发布登录事件
+AchievementService ..> AppEvents : 监听业务事件
+
+@enduml
