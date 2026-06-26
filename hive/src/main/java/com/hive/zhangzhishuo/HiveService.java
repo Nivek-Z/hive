@@ -1,20 +1,56 @@
 package com.hive.zhangzhishuo;
 
+import com.hive.yupeiyuan.Permissions;
+import com.hive.yupeiyuan.PermissionService;
+import com.hive.zhangkaiwen.ChannelMapper;
+import com.hive.zhangkaiwen.MessageService;
+import com.hive.yupeiyuan.MemberRoleMapper;
+import com.hive.zhangkaiwen.MessageMapper;
+import com.hive.yupeiyuan.RoleMapper;
+import com.hive.jiangminzhi.UserMapper;
+import com.hive.zhangkaiwen.Channel;
+import com.hive.yupeiyuan.MemberRole;
+import com.hive.yupeiyuan.Role;
+import com.hive.zhangkaiwen.ChannelVO;
+import com.hive.yupeiyuan.RoleVO;
+import com.hive.zhangkaiwen.UnreadRow;
+import com.hive.jiangminzhi.AppEvents;
+import com.hive.zhangkaiwen.WsPush;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 张致硕负责：蜂巢创建、成员管理和邀请加入。
- */
 public interface HiveService {
 
-    Map<String, Object> createHive(long ownerId, Map<String, Object> request);
+    HiveDetailVO create(long uid, HiveReq req);
 
-    List<Map<String, Object>> listJoinedHives(long userId);
+    List<HiveVO> myHives(long uid);
 
-    Map<String, Object> getHiveDetail(long userId, long hiveId);
+    HiveDetailVO detail(long uid, long hiveId);
 
-    String createInvite(long userId, long hiveId, Map<String, Object> request);
+    HiveVO update(long uid, long hiveId, HiveReq req);
 
-    void joinByInvite(long userId, String inviteCode);
+    void delete(long uid, long hiveId);
+
+    void leave(long uid, long hiveId);
+
+    List<MemberVO> members(long uid, long hiveId);
+
+    void kick(long uid, long hiveId, long targetId);
+
+    void mute(long uid, long hiveId, long targetId, int minutes);
+
+    void unmute(long uid, long hiveId, long targetId);
+
+    InviteVO createInvite(long uid, long hiveId, CreateInviteReq req);
+
+    List<InviteVO> listInvites(long uid, long hiveId);
+
+    HiveVO join(long uid, String code);
+
 }

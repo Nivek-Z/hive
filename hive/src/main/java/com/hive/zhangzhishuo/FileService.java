@@ -1,12 +1,10 @@
 package com.hive.zhangzhishuo;
 
-import java.io.InputStream;
-import java.util.Map;
+import org.springframework.web.multipart.MultipartFile;
 
-/**
- * 张致硕负责：图片上传和文件元数据保存。
- */
+import java.io.IOException;
+
 public interface FileService {
 
-    Map<String, Object> storeImage(long uploaderId, String originalName, String contentType, long size, InputStream content);
+    FileVO upload(long uid, MultipartFile file) throws IOException;
 }

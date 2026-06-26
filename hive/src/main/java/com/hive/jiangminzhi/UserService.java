@@ -1,15 +1,18 @@
 package com.hive.jiangminzhi;
 
-import java.util.Map;
+import com.hive.zhangzhishuo.BizException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 江民智负责：用户资料查看和修改。
- */
 public interface UserService {
 
-    Map<String, Object> getProfile(long viewerId, long userId);
+    User require(long id);
 
-    Map<String, Object> updateProfile(long userId, Map<String, Object> request);
+    UserVO profile(long id);
 
-    void changePassword(long userId, Map<String, Object> request);
+    UserVO updateProfile(long uid, UpdateProfileReq req);
+
+    void changePassword(long uid, ChangePasswordReq req);
+
 }

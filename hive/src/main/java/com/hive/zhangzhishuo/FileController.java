@@ -1,12 +1,13 @@
 package com.hive.zhangzhishuo;
 
-import com.hive.common.ApiResponse;
+import com.hive.jiangminzhi.CurrentUid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
-import java.util.Map;
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/files")
@@ -19,7 +20,8 @@ public class FileController {
     }
 
     @PostMapping
-    public ApiResponse<Map<String, Object>> uploadDraft() {
-        return ApiResponse.ok(fileService.storeImage(0L, "draft.png", "image/png", 0L, new ByteArrayInputStream(new byte[0])));
+    public ApiResponse<FileVO> upload(@CurrentUid long uid,
+                                      @RequestParam("file") MultipartFile file) throws IOException {
+        return ApiResponse.ok(fileService.upload(uid, file));
     }
 }

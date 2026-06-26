@@ -1,12 +1,10 @@
 package com.hive.zhangzhishuo;
 
-import com.hive.common.ApiResponse;
+import com.hive.jiangminzhi.CurrentUid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/invites")
@@ -18,9 +16,9 @@ public class InviteController {
         this.hiveService = hiveService;
     }
 
+    /** 凭邀请码加入蜂巢 */
     @PostMapping("/{code}/join")
-    public ApiResponse<Map<String, Object>> join(@PathVariable String code) {
-        hiveService.joinByInvite(0L, code);
-        return ApiResponse.ok(Map.of("joined", true));
+    public ApiResponse<HiveVO> join(@CurrentUid long uid, @PathVariable String code) {
+        return ApiResponse.ok(hiveService.join(uid, code));
     }
 }

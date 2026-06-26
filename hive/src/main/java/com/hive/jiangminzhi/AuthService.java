@@ -1,15 +1,16 @@
 package com.hive.jiangminzhi;
 
-import java.util.Map;
+import com.hive.zhangzhishuo.BizException;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * 江民智负责：注册、登录和 token 签发。
- */
 public interface AuthService {
 
-    Map<String, Object> register(Map<String, Object> request);
+    LoginResp register(RegisterReq req);
 
-    Map<String, Object> login(Map<String, Object> request);
+    LoginResp login(LoginReq req);
 
-    long verifyToken(String token);
 }

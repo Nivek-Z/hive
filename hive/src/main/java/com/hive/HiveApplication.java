@@ -1,14 +1,15 @@
 package com.hive;
 
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Hive 蜂巢项目启动入口。
- *
- * 起步阶段只确定包结构和接口边界，暂不注册业务实现。
+ * Hive 蜂巢 —— Discord 风格实时聊天社区
+ * Java 程序设计大作业
  */
 @SpringBootApplication
+@MapperScan("com.hive")
 public class HiveApplication {
 
     public static void main(String[] args) {

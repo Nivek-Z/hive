@@ -1,6 +1,48 @@
+server:
+  # 监听端口（容器内固定 8080，对外端口由 compose 的 ports 映射决定）
+  port: ${SERVER_PORT:8080}
+
 spring:
   application:
-    name: hive-progress-start
+    name: hive
+  datasource:
+    # 连接地址由独立环境变量拼装：主机/端口/库名 均可覆盖；默认 localhost 兼容本地开发
+    # createDatabaseIfNotExist: 首次启动自动建库；schema.sql/data.sql 幂等，自动建表
+    url: jdbc:mysql://${HIVE_DB_HOST:localhost}:${HIVE_DB_PORT:3306}/${HIVE_DB_NAME:hive_db}?createDatabaseIfNotExist=true&characterEncoding=UTF-8&serverTimezone=${HIVE_DB_TIMEZONE:Asia/Shanghai}&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${HIVE_DB_USER:root}
+    password: ${HIVE_DB_PASSWORD:123456}
+  sql:
+    init:
+      # always: 每次启动重跑（脚本均幂等）；生产稳定后可设 never 跳过
+      mode: ${HIVE_SQL_INIT_MODE:always}
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
+  servlet:
+    multipart:
+      max-file-size: ${HIVE_MAX_FILE_SIZE:10MB}
+      max-request-size: ${HIVE_MAX_REQUEST_SIZE:12MB}
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # 前端静态资源每次校验新鲜度（304 命中缓存），更新后刷新即生效
+          no-cache: true
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
 
-server:
-  port: 8080
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+hive:
+  jwt:
+    # 生产环境务必通过 HIVE_JWT_SECRET 注入自定义密钥（默认值仅供本地/课程演示）
+    secret: ${HIVE_JWT_SECRET:hive-2026-course-project-secret-key-7f3a9c1e}
+    expire-days: ${HIVE_JWT_EXPIRE_DAYS:7}
+  # 上传目录：容器部署时挂载为数据卷以持久化
+  upload-dir: ${HIVE_UPLOAD_DIR:./uploads}
+
+logging:
+  level:
+    com.hive: ${HIVE_LOG_LEVEL:info}
