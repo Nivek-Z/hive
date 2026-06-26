@@ -27,3 +27,4 @@ logs-app.txt
 # OS
 Thumbs.db
 .DS_Store
+/.metadata/
