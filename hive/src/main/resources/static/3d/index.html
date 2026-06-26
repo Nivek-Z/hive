@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢 HIVE · 白境</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50 6,90 28,90 72,50 94,10 72,10 28' fill='none' stroke='%23141411' stroke-width='6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/3d/css/porcelain.css">
+<script type="importmap">{ "imports": { "three": "/3d/vendor/three.module.js" } }</script>
+</head>
+<body>
+
+<!-- WebGL 画布：瓷白世界 -->
+<canvas id="gl"></canvas>
+<!-- 质感层：暗角 + 颗粒（纯视觉，不拦截交互） -->
+<div id="vignette" aria-hidden="true"></div>
+<div id="grain" aria-hidden="true"></div>
+
+<!-- 3D 锚定标签层（蜂巢名 / 频道名，由 JS 投影定位） -->
+<div id="labels" aria-hidden="true"></div>
+
+<!-- ============ HUD 四角框架 ============ -->
+<header class="hud hud-tl">
+  <div class="wordmark">
+    <span class="wm-hex">⬡</span>
+    <span class="wm-text">HIVE<i>蜂巢 · 白境</i></span>
+  </div>
+  <nav id="hive-index" class="hive-index"></nav>
+</header>
+
+<div class="hud hud-tr">
+  <div id="user-chip" class="user-chip off"></div>
+</div>
+
+<div class="hud hud-bl">
+  <div id="stage-copy" class="stage-copy off">
+    <div class="sc-no" id="sc-no">01</div>
+    <div class="sc-name" id="sc-name">—</div>
+    <div class="sc-meta" id="sc-meta">—</div>
+    <div class="sc-links" id="sc-links"></div>
+  </div>
+</div>
+
+<div class="hud hud-br">
+  <span id="conn-dot" class="conn-dot" title="连接状态"></span>
+  <span class="br-sep"></span>
+  <button class="br-link" id="lk-settings" title="主题与设置">◐ 设置</button>
+  <span class="br-sep"></span>
+  <a class="br-link" href="/" title="回到经典版界面">经典版 ↗</a>
+</div>
+
+<!-- ============ 右侧聊天面板 ============ -->
+<aside id="panel" class="panel">
+  <header class="panel-head">
+    <button class="p-back off" id="p-back" title="返回列表">←</button>
+    <div class="p-title">
+      <span class="p-no" id="p-no">—</span>
+      <span class="p-name" id="p-name">—</span>
+    </div>
+    <span class="p-topic" id="p-topic"></span>
+    <button class="p-close" id="p-close" title="收起面板 (Esc)">✕</button>
+  </header>
+  <div class="p-members" id="p-members"></div>
+
+  <!-- 视图 A：消息流 -->
+  <div class="p-scroll" id="p-scroll">
+    <div class="p-msgs" id="p-msgs"></div>
+  </div>
+
+  <!-- 视图 B：私域列表（私信会话 + 好友） -->
+  <div class="p-home off" id="p-home"></div>
+
+  <div class="p-typing" id="p-typing"></div>
+  <footer class="composer" id="composer">
+    <div class="reply-line off" id="reply-line">
+      <span id="reply-text"></span><button id="reply-cancel">✕</button>
+    </div>
+    <div class="composer-row">
+      <button id="attach" title="发送图片">▣</button>
+      <textarea id="input" rows="1" maxlength="2000" placeholder="给频道发消息…"></textarea>
+      <button id="send" title="发送 (Enter)">↗</button>
+    </div>
+    <input type="file" id="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+  </footer>
+</aside>
+
+<!-- ============ 登录 / 注册 ============ -->
+<div id="auth" class="auth off">
+  <div class="auth-card">
+    <div class="a-mark">⬡</div>
+    <h1 class="a-title">蜂巢<span>HIVE — PORCELAIN</span></h1>
+    <p class="a-sub" id="a-sub">登入白境 · 你的实时聊天社区</p>
+    <form id="a-form" autocomplete="off">
+      <label class="a-field"><span>USERNAME / 用户名</span>
+        <input id="a-user" type="text" maxlength="20" required></label>
+      <label class="a-field"><span>PASSWORD / 密码</span>
+        <input id="a-pass" type="password" maxlength="32" required></label>
+      <label class="a-field off" id="a-nick-field"><span>NICKNAME / 昵称</span>
+        <input id="a-nick" type="text" maxlength="16"></label>
+      <p class="a-error" id="a-error"></p>
+      <button class="a-submit" id="a-submit" type="submit">进入白境</button>
+    </form>
+    <p class="a-switch"><span id="a-switch-text">还没有账号？</span>
+      <a href="javascript:void(0)" id="a-switch">立即注册</a></p>
+    <p class="a-demo">DEMO — afeng / xiaomi / wengweng · 123456</p>
+  </div>
+</div>
+
+<!-- 图片灯箱 / 弹层 / 表情 / 提示 / 开场白幕 -->
+<div id="lightbox" class="lightbox off"><img id="lightbox-img" alt=""></div>
+<div id="modal-root"></div>
+<div id="emoji-pop" class="emoji-pop off"></div>
+<div id="toasts"></div>
+<div id="boot-cover"></div>
+
+<script type="module" src="/3d/js/app3d.js"></script>
+</body>
+</html>

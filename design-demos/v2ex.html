@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢 Hive · 论坛风（V2EX 式）</title>
+<style>
+/* ============================================================
+   蜂巢 Hive · 论坛风 DEMO（V2EX 式）
+   浅灰页底 · 白色圆角盒子 · 系统字体 · 节点标签 · 回复数胶囊
+   频道=节点，讨论=主题，消息=楼层回复
+   ============================================================ */
+:root{
+  --page:#e2e2e2;
+  --box:#fff;
+  --line:#f0f0f0;
+  --line-2:#e7e7e7;
+  --text:#333;
+  --title:#4a4a4a;
+  --fade:#999;
+  --gray:#ccc;
+  --link:#778087;     /* V2EX 招牌灰蓝 */
+  --green:#5c9a6b;
+  --tag:#f5f5f5;
+  --font:"Helvetica Neue","Luxi Sans","DejaVu Sans",Tahoma,"Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--page);line-height:1.6}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font-family:inherit;cursor:pointer}
+input,textarea{font-family:inherit;font-size:14px}
+.hidden{display:none!important}
+
+/* 演示切换条 ------------------------------------------------------------ */
+.demobar{position:fixed;top:0;left:0;right:0;height:32px;z-index:99;display:flex;align-items:center;
+  gap:10px;padding:0 14px;background:#333;color:#bbb;font-size:12px}
+.demobar b{color:#fff}
+.demobar .sw{margin-left:auto;display:flex}
+.demobar .sw button{padding:3px 12px;font-size:12px;color:#ccc;background:#444;border:1px solid #555;border-right:none}
+.demobar .sw button:last-child{border-right:1px solid #555}
+.demobar .sw button.on{background:#778087;color:#fff}
+
+#scroll{position:absolute;inset:32px 0 0 0;overflow-y:auto}
+#wrapper{width:980px;max-width:96%;margin:20px auto 40px}
+
+/* 盒子通用 -------------------------------------------------------------- */
+.box{background:var(--box);border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden;margin-bottom:14px}
+.cell{padding:10px 16px;border-top:1px solid var(--line)}
+.cell:first-child{border-top:none}
+.header{padding:11px 16px;font-size:14px;border-top:none;display:flex;align-items:center}
+.header .t{font-weight:bold;color:var(--text)}
+.header .more{margin-left:auto;font-size:12px}
+.fade{color:var(--fade)}
+.gray{color:var(--gray)}
+.small{font-size:12px}
+
+/* 顶栏 ----------------------------------------------------------------- */
+#top{display:flex;align-items:center;gap:16px;padding:14px 16px;background:var(--box);border-radius:6px;
+  box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:14px}
+#top .logo{display:flex;align-items:baseline;gap:8px}
+#top .logo .m{font-size:22px;font-weight:bold;color:#333;letter-spacing:.04em}
+#top .logo .m i{color:#778087;font-style:normal}
+#top .logo .sub{font-size:12px;color:var(--gray)}
+#top .search{margin-left:8px;flex:none;width:240px}
+#top .search input{width:100%;border:1px solid #ddd;background:#fafafa;border-radius:4px;padding:7px 10px;
+  outline:none;color:#333}
+#top .search input:focus{border-color:#778087;background:#fff}
+#top .nav{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:13px}
+#top .coins{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--fade)}
+#top .coins .c{display:inline-flex;align-items:center;gap:3px}
+#top .coins .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.dot-g{background:#fbbf24}.dot-s{background:#cbd5db}.dot-c{background:#c08457}
+#top .me{display:flex;align-items:center;gap:7px}
+#top .me .av{width:24px;height:24px;border-radius:4px;background:#778087;color:#fff;display:grid;
+  place-items:center;font-size:12px}
+#top .me a{color:#333}
+
+/* 节点导航 tabs --------------------------------------------------------- */
+.tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px}
+.tabs a{padding:5px 12px;border-radius:4px;color:#778087;font-size:13px}
+.tabs a:hover{background:#f5f5f5;text-decoration:none}
+.tabs a.on{background:#f0f0f0;color:#000;font-weight:bold}
+
+/* 主区 + 右栏 ----------------------------------------------------------- */
+.layout{display:grid;grid-template-columns:1fr 270px;gap:14px;align-items:start}
+
+/* 主题列表 item -------------------------------------------------------- */
+.item{display:flex;gap:10px;padding:11px 16px;border-top:1px solid var(--line)}
+.item:first-child{border-top:none}
+.item .av{width:36px;height:36px;flex:none;border-radius:4px;display:grid;place-items:center;
+  color:#fff;font-size:15px}
+.av.c1{background:#7a93a8}.av.c2{background:#a88b7a}.av.c3{background:#7aa888}.av.c4{background:#9a8bb0}.av.c5{background:#778087}
+.item .main{flex:1;min-width:0}
+.item .title{display:block;color:var(--title);font-size:15px;line-height:1.45}
+.item .title:hover{color:#000;text-decoration:none}
+.item .info{margin-top:4px;font-size:12px;color:var(--fade);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.node{background:var(--tag);color:#999;padding:2px 8px;border-radius:2px;font-size:12px}
+.node:hover{background:#e2e2e2;text-decoration:none}
+.info .sep{color:#ddd}
+.info a{color:#778087}
+.count{flex:none;align-self:center}
+.count_livid{background:#778087;color:#fff;border-radius:10px;padding:2px 9px;font-size:12px;min-width:24px;
+  text-align:center;display:inline-block}
+.count_zero{background:#ccc}
+
+/* 右栏小盒 -------------------------------------------------------------- */
+.signin .me-row{display:flex;align-items:center;gap:11px}
+.signin .av{width:48px;height:48px;border-radius:5px;background:#778087;color:#fff;display:grid;
+  place-items:center;font-size:20px}
+.signin .nm{font-size:15px;color:#333;font-weight:bold}
+.signin .stats{display:flex;text-align:center;border-top:1px solid var(--line);margin-top:11px}
+.signin .stats .s{flex:1;padding:9px 0;border-left:1px solid var(--line)}
+.signin .stats .s:first-child{border-left:none}
+.signin .stats .num{font-size:16px;color:#333}
+.signin .stats .lb{font-size:11px;color:var(--fade)}
+.checkin{display:block;width:100%;text-align:center;padding:8px;background:#f5f5f5;color:#778087;
+  border:none;border-top:1px solid var(--line);font-size:13px}
+.checkin:hover{background:#778087;color:#fff}
+
+.online-grid{display:flex;flex-wrap:wrap;gap:7px}
+.online-grid .o{position:relative}
+.online-grid .av{width:32px;height:32px;border-radius:4px;display:grid;place-items:center;color:#fff;font-size:13px}
+.online-grid .pip{position:absolute;right:-2px;bottom:-2px;width:9px;height:9px;border-radius:50%;
+  background:var(--green);border:2px solid #fff}
+
+.hot li{list-style:none;padding:8px 16px;border-top:1px solid var(--line);font-size:13px;display:flex;gap:9px}
+.hot li:first-child{border-top:none}
+.hot .rk{color:#ccc;font-style:italic;flex:none;width:14px;text-align:center}
+.hot a{color:#666}
+
+.credit{padding:13px 16px;font-size:12px;color:var(--fade);line-height:1.9}
+
+#foot{text-align:center;color:#999;font-size:12px;padding:6px 0 20px;line-height:1.9}
+#foot .small{color:#bbb}
+
+/* ============================ 登录页 ============================ */
+#v-login{display:grid;place-items:center;min-height:calc(100vh - 92px)}
+.login-box{width:340px}
+.login-box .head{text-align:center;padding:22px 0 6px}
+.login-box .head .m{font-size:26px;font-weight:bold;color:#333}
+.login-box .head .m i{color:#778087;font-style:normal}
+.login-box .head .sub{font-size:12px;color:var(--gray);margin-top:3px}
+.login-box .body{padding:18px 22px 22px}
+.login-box .tabs2{display:flex;border-bottom:1px solid var(--line);margin-bottom:18px}
+.login-box .tabs2 a{flex:1;text-align:center;padding:8px 0;color:#999}
+.login-box .tabs2 a.on{color:#333;border-bottom:2px solid #778087;margin-bottom:-1px;font-weight:bold}
+.fld{margin-bottom:13px}
+.fld label{display:block;font-size:12px;color:#999;margin-bottom:5px}
+.fld input{width:100%;border:1px solid #ddd;border-radius:4px;padding:9px 11px;outline:none}
+.fld input:focus{border-color:#778087}
+.btn{width:100%;background:#778087;color:#fff;border:none;border-radius:4px;padding:10px;font-size:14px}
+.btn:hover{background:#67707a}
+.login-box .tip{margin-top:13px;text-align:center;font-size:12px;color:var(--gray)}
+.login-box .tip b{color:#999;font-weight:normal}
+
+/* ============================ 主题详情 ============================ */
+.topic-head .back{margin-bottom:12px;font-size:13px}
+.topic-head h1{font-size:21px;color:#000;font-weight:600;line-height:1.4;padding:14px 16px 0}
+.topic-head .meta{padding:8px 16px 14px;font-size:12px;color:var(--fade);display:flex;align-items:center;gap:7px}
+.topic-head .meta .av{width:24px;height:24px;border-radius:4px;background:#7a93a8;color:#fff;display:grid;
+  place-items:center;font-size:12px}
+.topic-head .meta a{color:#778087}
+.topic-content{padding:6px 16px 18px;color:#333;font-size:15px;line-height:1.8;border-top:1px solid var(--line)}
+.replies .header .t{font-weight:normal;color:#999;font-size:13px}
+.reply{display:flex;gap:11px;padding:13px 16px;border-top:1px solid var(--line)}
+.reply .av{width:32px;height:32px;flex:none;border-radius:4px;display:grid;place-items:center;color:#fff;font-size:14px}
+.reply .r-main{flex:1;min-width:0}
+.reply .r-top{display:flex;align-items:center;gap:8px;font-size:13px}
+.reply .r-top .nm{color:#778087}
+.reply .r-top .badge{font-size:11px;color:#fff;background:#bbb;border-radius:2px;padding:0 5px}
+.reply .r-top .badge.adm{background:#c08457}.reply .r-top .badge.mod{background:#7a93a8}
+.reply .r-top .time{color:var(--gray);font-size:12px}
+.reply .r-top .floor{margin-left:auto;color:#ddd;font-size:12px}
+.reply .r-text{margin-top:3px;color:#333;line-height:1.7}
+.reply .r-act{margin-top:6px;font-size:12px;color:var(--gray);display:flex;gap:14px}
+.reply .r-act span{cursor:pointer}
+.reply .r-act span:hover{color:#778087}
+.reply .r-act .thanked{color:#c08457}
+.replybox{padding:14px 16px}
+.replybox textarea{width:100%;height:70px;border:1px solid #ddd;border-radius:4px;padding:10px;outline:none;
+  resize:vertical;line-height:1.6}
+.replybox textarea:focus{border-color:#778087}
+.replybox .row{display:flex;align-items:center;margin-top:10px}
+.replybox .row .gray{font-size:12px}
+.replybox .btn{width:auto;padding:8px 22px;margin-left:auto}
+</style>
+</head>
+<body>
+
+<div class="demobar">
+  <span>🐝 蜂巢 Hive — <b>论坛风（V2EX 式）</b>皮肤小样</span>
+  <span style="opacity:.6">纯静态 · 频道=节点 · 讨论=主题</span>
+  <div class="sw">
+    <button id="sw-login" onclick="show('login')">登录</button>
+    <button id="sw-home" class="on" onclick="show('home')">首页</button>
+    <button id="sw-topic" onclick="show('topic')">主题页</button>
+  </div>
+</div>
+
+<div id="scroll">
+
+<!-- ========================= 登录页 ========================= -->
+<section id="v-login" class="hidden">
+  <div class="login-box box">
+    <div class="head">
+      <div class="m">蜂巢 <i>Hive</i></div>
+      <div class="sub">Way to Buzz · 嗡嗡作响的地方</div>
+    </div>
+    <div class="body">
+      <div class="tabs2">
+        <a class="on" href="#" onclick="ltab(this,'登 录');return false">登录</a>
+        <a href="#" onclick="ltab(this,'注 册');return false">注册</a>
+      </div>
+      <form onsubmit="show('home');return false">
+        <div class="fld"><label>用户名</label><input value="afeng"></div>
+        <div class="fld"><label>密码</label><input type="password" value="123456"></div>
+        <button class="btn" id="lbtn" type="submit">登 录</button>
+      </form>
+      <div class="tip">演示账号 <b>afeng</b> / 密码 <b>123456</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= 首页（主题列表） ========================= -->
+<section id="v-home">
+  <div id="wrapper">
+    <!-- 顶栏 -->
+    <div id="top">
+      <div class="logo"><span class="m">蜂巢<i>V</i></span><span class="sub">/ Hive</span></div>
+      <div class="search"><input placeholder="搜索主题 / 节点 / 成员"></div>
+      <div class="nav">
+        <div class="coins" title="蜜罐余额">
+          <span class="c"><span class="dot dot-g"></span>12</span>
+          <span class="c"><span class="dot dot-s"></span>340</span>
+          <span class="c"><span class="dot dot-c"></span>88</span>
+        </div>
+        <a href="#">消息</a>
+        <div class="me"><span class="av">阿</span><a href="#">阿风</a></div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- 主区 -->
+      <div class="main">
+        <div class="box"><div class="tabs">
+          <a class="on" href="#">最新</a><a href="#">最热</a>
+          <a href="#">综合大厅</a><a href="#">技术答疑</a><a href="#">作业互助</a>
+          <a href="#">灌水区</a><a href="#">公告</a>
+        </div></div>
+
+        <div class="box" id="topic-list">
+          <div class="item" onclick="show('topic')" style="cursor:pointer">
+            <div class="av c1">翁</div>
+            <div class="main">
+              <a class="title" href="#" onclick="return false">新做了一套「论坛风」皮肤，大家看看这个排版顺不顺眼？</a>
+              <div class="info"><a class="node" href="#">综合大厅</a><a href="#">翁翁</a><span class="sep">·</span>3 分钟前<span class="sep">·</span>最后回复来自 <a href="#">小米</a></div>
+            </div>
+            <div class="count"><span class="count_livid">12</span></div>
+          </div>
+
+          <div class="item">
+            <div class="av c2">米</div>
+            <div class="main">
+              <a class="title" href="#" onclick="return false">求助：Spring Boot WebSocket 断线重连后消息漏收，怎么补偿？</a>
+              <div class="info"><a class="node" href="#">技术答疑</a><a href="#">小米</a><span class="sep">·</span>21 分钟前<span class="sep">·</span>最后回复来自 <a href="#">阿康</a></div>
+            </div>
+            <div class="count"><span class="count_livid">8</span></div>
+          </div>
+
+          <div class="item">
+            <div class="av c3">栗</div>
+            <div class="main">
+              <a class="title" href="#" onclick="return false">大作业进度同步贴：M7 交付打磨阶段，演示数据已就绪</a>
+              <div class="info"><a class="node" href="#">作业互助</a><a href="#">栗子</a><span class="sep">·</span>1 小时前<span class="sep">·</span>最后回复来自 <a href="#">翁翁</a></div>
+            </div>
+            <div class="count"><span class="count_livid">5</span></div>
+          </div>
+
+          <div class="item">
+            <div class="av c4">康</div>
+            <div class="main">
+              <a class="title" href="#" onclick="return false">摸鱼时间到，分享一下你们今天写代码听的歌单</a>
+              <div class="info"><a class="node" href="#">灌水区</a><a href="#">阿康</a><span class="sep">·</span>2 小时前<span class="sep">·</span>最后回复来自 <a href="#">栗子</a></div>
+            </div>
+            <div class="count"><span class="count_livid">23</span></div>
+          </div>
+
+          <div class="item">
+            <div class="av c5">巢</div>
+            <div class="main">
+              <a class="title" href="#" onclick="return false">【公告】蜂巢 v1.0 答辩版功能冻结，问题反馈在本帖跟回</a>
+              <div class="info"><a class="node" href="#">公告</a><a href="#">蜂巢助手</a><span class="sep">·</span>今天 08:00</div>
+            </div>
+            <div class="count"><span class="count_livid count_zero">0</span></div>
+          </div>
+
+          <div class="item">
+            <div class="av c1">阿</div>
+            <div class="main">
+              <a class="title" href="#" onclick="return false">隐藏彩蛋发现一则：连续按方向键试试？（剧透警告）</a>
+              <div class="info"><a class="node" href="#">灌水区</a><a href="#">阿风</a><span class="sep">·</span>3 小时前<span class="sep">·</span>最后回复来自 <a href="#">小米</a></div>
+            </div>
+            <div class="count"><span class="count_livid">7</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右栏 -->
+      <div class="side">
+        <div class="box signin">
+          <div class="cell" style="border:none">
+            <div class="me-row"><span class="av">阿</span><div><div class="nm">阿风</div><div class="small fade">第 42 号巢友 · 已加入 18 天</div></div></div>
+            <div class="stats">
+              <div class="s"><div class="num">26</div><div class="lb">主题</div></div>
+              <div class="s"><div class="num">184</div><div class="lb">回复</div></div>
+              <div class="s"><div class="num">9</div><div class="lb">成就</div></div>
+            </div>
+          </div>
+          <button class="checkin" id="checkin" onclick="checkin()">🍯 每日签到领蜜</button>
+        </div>
+
+        <div class="box">
+          <div class="header"><span class="t">在线成员</span><span class="more fade">3 / 5</span></div>
+          <div class="cell" style="border-top:1px solid var(--line)">
+            <div class="online-grid">
+              <div class="o"><div class="av c1">翁</div><span class="pip"></span></div>
+              <div class="o"><div class="av c2">米</div><span class="pip"></span></div>
+              <div class="o"><div class="av c1">阿</div><span class="pip"></span></div>
+              <div class="o"><div class="av c3" style="opacity:.5">栗</div></div>
+              <div class="o"><div class="av c4" style="opacity:.5">康</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="header"><span class="t">今日热议</span></div>
+          <ul class="hot">
+            <li><span class="rk">1</span><a href="#">论坛风皮肤排版讨论</a></li>
+            <li><span class="rk">2</span><a href="#">WebSocket 断线重连补偿</a></li>
+            <li><span class="rk">3</span><a href="#">写代码歌单分享</a></li>
+            <li><span class="rk">4</span><a href="#">M7 交付进度同步</a></li>
+          </ul>
+        </div>
+
+        <div class="box credit">
+          蜂巢 Hive · Java 程序设计大作业<br>
+          Spring Boot + WebSocket 实时聊天社区<br>
+          <span class="gray">第三套皮肤 · 论坛风 · 纯静态预览</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="foot">
+      蜂巢 Hive &nbsp;·&nbsp; 当前在线 3 人 &nbsp;·&nbsp; 已累计 1,284 条消息<br>
+      <span class="small">Powered by Spring Boot &nbsp;·&nbsp; 这是一份课程作业演示，非真实站点</span>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= 主题详情 ========================= -->
+<section id="v-topic" class="hidden">
+  <div id="wrapper">
+    <div id="top">
+      <div class="logo"><span class="m">蜂巢<i>V</i></span><span class="sub">/ Hive</span></div>
+      <div class="search"><input placeholder="搜索主题 / 节点 / 成员"></div>
+      <div class="nav">
+        <a href="#">消息</a>
+        <div class="me"><span class="av">阿</span><a href="#">阿风</a></div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="main">
+        <div class="topic-head">
+          <div class="back"><a href="#" onclick="show('home');return false">‹ 返回首页</a> &nbsp;/&nbsp; <a class="node" href="#">综合大厅</a></div>
+          <div class="box">
+            <h1>新做了一套「论坛风」皮肤，大家看看这个排版顺不顺眼？</h1>
+            <div class="meta"><span class="av">翁</span><a href="#">翁翁</a><span class="sep fade">·</span>3 分钟前<span class="sep fade">·</span>点击 87<span class="sep fade">·</span><a class="node" href="#">综合大厅</a></div>
+            <div class="topic-content">
+              这套皮肤参考了大家很熟悉的论坛排版：浅灰底 + 白色圆角盒子 + 右侧信息栏。我把「频道」做成了「节点」，一段讨论就是一个主题帖，消息变成楼层回复。<br><br>
+              好处是信息密度高、稳重耐看、答辩时一眼就懂；而且它跟我们另外两套（暗色 / 3D）完全不撞。大家觉得行不行？
+            </div>
+          </div>
+        </div>
+
+        <div class="box replies">
+          <div class="header"><span class="t">12 条回复 &nbsp;·&nbsp; 直到 09:40</span></div>
+
+          <div class="reply">
+            <div class="av c2">米</div>
+            <div class="r-main">
+              <div class="r-top"><a class="nm" href="#">小米</a><span class="badge mod">管理员</span><span class="time">09:14</span><span class="floor">1 楼</span></div>
+              <div class="r-text">挺好的，干净不花哨，这种排版老师肯定眼熟，稳。</div>
+              <div class="r-act"><span onclick="thank(this)">♡ 感谢 <em>2</em></span><span>回复</span></div>
+            </div>
+          </div>
+
+          <div class="reply">
+            <div class="av c4">康</div>
+            <div class="r-main">
+              <div class="r-top"><a class="nm" href="#">阿康</a><span class="time">09:18</span><span class="floor">2 楼</span></div>
+              <div class="r-text">右边那个「每日签到领蜜」有点意思，把 V2EX 的金币玩法换成蜂蜜了哈哈。</div>
+              <div class="r-act"><span onclick="thank(this)">♡ 感谢 <em>4</em></span><span>回复</span></div>
+            </div>
+          </div>
+
+          <div class="reply">
+            <div class="av c1">翁</div>
+            <div class="r-main">
+              <div class="r-top"><a class="nm" href="#">翁翁</a><span class="badge adm">巢主</span><span class="time">09:21</span><span class="floor">3 楼</span></div>
+              <div class="r-text">对，节点标签、回复数胶囊、右栏小盒子这些都还原了，但配色和文案都按蜂巢主题改过，不是直接套模板。</div>
+              <div class="r-act"><span onclick="thank(this)">♡ 感谢 <em>1</em></span><span>回复</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="box replybox">
+          <textarea id="reply-inp" placeholder="在 综合大厅 回复这个主题…（Ctrl+Enter 发送）" onkeydown="if(event.ctrlKey&&event.key==='Enter')sendReply()"></textarea>
+          <div class="row"><span class="gray">支持 Markdown · 回复将通知楼主</span><button class="btn" onclick="sendReply()">回复</button></div>
+        </div>
+      </div>
+
+      <div class="side">
+        <div class="box">
+          <div class="header"><span class="t">本主题作者</span></div>
+          <div class="cell signin" style="border-top:1px solid var(--line)">
+            <div class="me-row"><span class="av" style="background:#7a93a8">翁</span><div><div class="nm">翁翁</div><div class="small fade">巢主 · 代码蜂房</div></div></div>
+          </div>
+        </div>
+        <div class="box">
+          <div class="header"><span class="t">相关主题</span></div>
+          <ul class="hot">
+            <li><span class="rk">·</span><a href="#">三套皮肤怎么切换？</a></li>
+            <li><span class="rk">·</span><a href="#">暗色版和 3D 版对比</a></li>
+            <li><span class="rk">·</span><a href="#">答辩演示流程建议</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div id="foot"><span class="small">蜂巢 Hive · 论坛风皮肤 · 纯静态预览</span></div>
+  </div>
+</section>
+
+</div>
+
+<script>
+function show(v){
+  ['login','home','topic'].forEach(k=>{
+    document.getElementById('v-'+k).classList.toggle('hidden',k!==v);
+    document.getElementById('sw-'+k).classList.toggle('on',k===v);
+  });
+  document.getElementById('scroll').scrollTop=0;
+}
+function ltab(el,label){
+  el.parentElement.querySelectorAll('a').forEach(a=>a.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('lbtn').textContent=label;
+}
+function checkin(){
+  const b=document.getElementById('checkin');
+  b.textContent='✓ 今日已签到 · +3 蜜';b.style.background='#5c9a6b';b.style.color='#fff';b.disabled=true;
+}
+function thank(el){
+  if(el.classList.contains('thanked'))return;
+  el.classList.add('thanked');
+  const em=el.querySelector('em');em.textContent=(+em.textContent)+1;
+}
+function sendReply(){
+  const t=document.getElementById('reply-inp');const v=t.value.trim();if(!v)return;t.value='';
+  const box=document.querySelector('.replies');
+  const floor=box.querySelectorAll('.reply').length+1;
+  const r=document.createElement('div');r.className='reply';
+  r.innerHTML=`<div class="av c1">阿</div><div class="r-main">
+    <div class="r-top"><a class="nm" href="#">阿风</a><span class="time">现在</span><span class="floor">${floor} 楼</span></div>
+    <div class="r-text">${v.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</div>
+    <div class="r-act"><span onclick="thank(this)">♡ 感谢 <em>0</em></span><span>回复</span></div></div>`;
+  box.appendChild(r);
+  box.querySelector('.header .t').textContent=floor+' 条回复 · 直到 现在';
+}
+</script>
+</body>
+</html>

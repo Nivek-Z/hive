@@ -1,4 +1,4 @@
-# Local runtime data
+# 便携工具链与运行时数据（不入库）
 tools/
 data/
 uploads/
@@ -6,10 +6,10 @@ logs/
 .worktrees/
 *.zip
 
-# Secrets
+# 部署密钥（含密码/JWT，勿入库）
 .env
 
-# Build output
+# 构建产物
 hive/target/
 
 # IDE
@@ -20,11 +20,12 @@ hive/target/
 .project
 .settings/
 
-# Logs
+# 运行日志
 logs-app.txt
 *.log
 
-# OS
+# 系统
 Thumbs.db
 .DS_Store
+.claude/settings.local.json
 /.metadata/
