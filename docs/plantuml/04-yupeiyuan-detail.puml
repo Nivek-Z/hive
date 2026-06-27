@@ -26,7 +26,7 @@ legend right
   虞沛远负责：权限位定义、角色管理、成员角色分配、好友申请处理和私聊频道创建。
 endlegend
 
-package "虞沛远负责包 com.hive.yupeiyuan" as YPY #FFF4D8 {
+package "虞沛远负责包 yupeiyuan" as YPY #FFF4D8 {
   class "FriendController（好友接口）" as FriendController <<Controller>>
   class "DmController（私聊接口）" as DmController <<Controller>>
   class "RoleController（角色接口）" as RoleController <<Controller>>

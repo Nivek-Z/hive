@@ -28,7 +28,7 @@ legend right
   江民智负责：注册登录、JWT、当前用户注解、用户资料、密码修改、Web 配置和成就事件监听。
 endlegend
 
-package "江民智负责包 com.hive.jiangminzhi" as JMZ #F4EAFE {
+package "江民智负责包 jiangminzhi" as JMZ #F4EAFE {
   class "AuthController（认证接口）" as AuthController <<Controller>>
   class "UserController（用户接口）" as UserController <<Controller>>
   class "AchievementController（成就接口）" as AchievementController <<Controller>>

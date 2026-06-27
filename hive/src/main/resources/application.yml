@@ -45,4 +45,7 @@ hive:
 
 logging:
   level:
-    com.hive: ${HIVE_LOG_LEVEL:info}
+    jiangminzhi: ${HIVE_LOG_LEVEL:info}
+    yupeiyuan: ${HIVE_LOG_LEVEL:info}
+    zhangkaiwen: ${HIVE_LOG_LEVEL:info}
+    zhangzhishuo: ${HIVE_LOG_LEVEL:info}

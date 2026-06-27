@@ -11,7 +11,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.hive</groupId>
+    <groupId>hive</groupId>
     <artifactId>hive</artifactId>
     <version>1.0.0</version>
     <name>Hive 蜂巢</name>

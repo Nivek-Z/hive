@@ -28,7 +28,7 @@ legend right
   实线表示直接调用或构造器依赖，虚线表示 DTO、事件、注解或轻量使用。
 endlegend
 
-package "张致硕负责包 com.hive.zhangzhishuo" as ZZS #E8F3FF {
+package "张致硕负责包 zhangzhishuo" as ZZS #E8F3FF {
   class "ApiResponse<T>（统一响应）" as ApiResponse <<DTO>>
   class "BizException（业务异常）" as BizException <<Common>>
   class "GlobalExceptionHandler（异常处理）" as GlobalExceptionHandler <<Common>>

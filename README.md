@@ -74,7 +74,7 @@ docker compose up -d          # 拉取镜像，起 MySQL + 应用（自带 healt
 
 ```
 ├── hive/                  Maven 项目（后端 + 前端静态资源）
-│   └── src/main/java/com/hive/
+│   └── src/main/java/
 │       ├── controller/    REST 控制器
 │       ├── service/       业务逻辑（事务边界）
 │       ├── mapper/        MyBatis 数据访问

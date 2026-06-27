@@ -27,7 +27,7 @@ legend right
   张凯文负责：频道维护、消息发送读取、表情回应、全文搜索、统计热力图和 WebSocket 实时通信。
 endlegend
 
-package "张凯文负责包 com.hive.zhangkaiwen" as ZKW #EAF7EA {
+package "张凯文负责包 zhangkaiwen" as ZKW #EAF7EA {
   class "ChannelController（频道接口）" as ChannelController <<Controller>>
   class "MessageController（消息接口）" as MessageController <<Controller>>
   class "SearchController（搜索统计接口）" as SearchController <<Controller>>
