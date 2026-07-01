@@ -36,6 +36,8 @@ mybatis:
     map-underscore-to-camel-case: true
 
 hive:
+  demo-data:
+    enabled: ${HIVE_DEMO_DATA_ENABLED:true}
   jwt:
     # 生产环境务必通过 HIVE_JWT_SECRET 注入自定义密钥（默认值仅供本地/课程演示）
     secret: ${HIVE_JWT_SECRET:hive-2026-course-project-secret-key-7f3a9c1e}

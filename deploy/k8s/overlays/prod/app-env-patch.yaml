@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hive-app
+spec:
+  template:
+    spec:
+      containers:
+        - name: hive-app
+          env:
+            - name: HIVE_DEMO_DATA_ENABLED
+              value: "false"
+            - name: HIVE_SQL_INIT_MODE
+              value: always

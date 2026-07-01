@@ -25,8 +25,9 @@
 | 经典版（蜂蜜暗色） | `http://localhost:8080/` |
 | 白境（瓷白 3D） | `http://localhost:8080/3d/index.html` |
 
-无后端纯视觉预览（只能看到登录页 + 白境世界）：
-`node scripts/preview-3d.mjs hive/src/main/resources/static` → `http://localhost:8077/3d/index.html`
+无后端纯视觉预览（只能看到登录页 + 白境世界）：可用任意静态文件服务器指向
+`hive/src/main/resources/static`，例如 `python -m http.server 8077` 后访问
+`http://localhost:8077/3d/index.html`。
 
 ## 设计概念
 

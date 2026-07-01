@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({WebConfig.class, AuthInterceptor.class, GlobalExceptionHandler.class})
 @ContextConfiguration(classes = {TestWebMvcApplication.class, UserController.class})
 @TestPropertySource(properties = "hive.upload-dir=${java.io.tmpdir}/hive-test-uploads")
-class UserControllerIntegrationTest {
+class UserControllerWebMvcTest {
 
     private static final String TOKEN = "test-token";
 

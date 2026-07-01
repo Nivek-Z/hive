@@ -1,19 +1,10 @@
 name: Backend Tests
 
-# 后端代码变更时自动跑单元测试（纯单测，无需数据库）
 on:
   push:
-    paths:
-      - "hive/src/main/java/**"
-      - "hive/src/test/**"
-      - "hive/pom.xml"
-      - ".github/workflows/backend-test.yml"
+    branches: ["**"]
   pull_request:
-    paths:
-      - "hive/src/main/java/**"
-      - "hive/src/test/**"
-      - "hive/pom.xml"
-      - ".github/workflows/backend-test.yml"
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -30,5 +21,8 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Run backend tests
+      - name: Run unit and Web MVC tests
         run: mvn -B test -f hive/pom.xml
+
+      - name: Run MySQL integration tests
+        run: mvn -B verify -Pintegration -f hive/pom.xml

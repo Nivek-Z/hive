@@ -20,18 +20,24 @@
 
 ## 🚀 快速开始
 
-环境要求：仅需 JDK 17+（本机 `D:\JDK-25`）。Maven 与 MySQL 均为便携版，已内置于 `tools/`。
+环境要求：本地运行后端需 JDK 21+ 与 Maven；数据库可使用仓库内的便携 MySQL。
 
+```bat
+start-mysql.bat          # 按 mysql.properties 启动便携 MySQL
+start-mysql.bat status   # 查看数据库状态
+start-mysql.bat stop     # 停止数据库
 ```
-双击 start-hive.bat     → 自动启动 MySQL + 构建（首次）+ 启动应用
-浏览器打开 http://localhost:8080
+
+数据库端口在 `mysql.properties` 中配置，默认 `MYSQL_PORT=3306`；也可以用环境变量 `HIVE_DB_PORT` 临时覆盖。
+
+```bash
+mvn -f hive/pom.xml spring-boot:run
+# 浏览器打开 http://localhost:8080
 ```
 
 首次启动自动建库建表（`createDatabaseIfNotExist` + 幂等 schema.sql）。
 
 **演示账号**（首次启动自动创建）：`afeng` / `xiaomi` / `wengweng`，密码均为 `123456`
-
-其他脚本：`build.bat` 重新构建（含单元测试）· `start-mysql.bat` / `stop-mysql.bat` 单独管理数据库
 
 ## 🐳 Docker 部署
 
@@ -53,6 +59,36 @@ docker compose up -d          # 拉取镜像，起 MySQL + 应用（自带 healt
 - 镜像基于多阶段构建（Maven 编译 → JRE 运行、非 root 用户），构建上下文即唯一一份源码 `hive/`。
 - GHCR 包默认私有，首次拉取前需 `docker login ghcr.io`（设为公开后可免登录）。
 
+## 🚢 k3s / Argo CD 部署
+
+仓库提供 GitOps 清单：`deploy/k8s/base` 是通用 Kubernetes 资源，`deploy/k8s/overlays/test` 与
+`deploy/k8s/overlays/prod` 分别部署到同一 k3s 集群中的 `hive-test`、`hive-prod` 命名空间。
+
+两个命名空间都需要预先创建 `hive-secrets`：
+
+```bash
+kubectl create namespace hive-test
+kubectl create namespace hive-prod
+
+kubectl -n hive-test create secret generic hive-secrets \
+  --from-literal=mysql-root-password='<mysql-password>' \
+  --from-literal=jwt-secret='<long-random-secret>'
+
+kubectl -n hive-prod create secret generic hive-secrets \
+  --from-literal=mysql-root-password='<mysql-password>' \
+  --from-literal=jwt-secret='<long-random-secret>'
+```
+
+然后创建 Argo CD Application：
+
+```bash
+kubectl apply -f deploy/argocd/hive-test.yaml
+kubectl apply -f deploy/argocd/hive-prod.yaml
+```
+
+CI 行为：功能分支和 PR 只运行后端测试；合并到 `main` 后构建并推送 GHCR 镜像，同时更新测试环境 overlay。
+生产发布在 GitHub Actions 手动运行 `Promote Production`，输入要发布的镜像 tag 后更新 prod overlay，由 Argo CD 同步。
+
 ## 🏗️ 技术栈与架构
 
 | 层 | 技术 |
@@ -61,7 +97,7 @@ docker compose up -d          # 拉取镜像，起 MySQL + 应用（自带 healt
 | 数据库 | MySQL 8.0（15 张表：外键级联 / 树形自引用 / 多对多 / 软删除 / ngram 全文索引 / 事务） |
 | 安全 | 手写 JWT（HS256，常量时间验签）· BCrypt 密码哈希 · 拦截器统一鉴权 |
 | 前端 | 原生 HTML / CSS / JS 单页应用（打包进 jar，零依赖） |
-| 测试 | JUnit 5 单元测试 |
+| 测试 | JUnit 5 / MockMvc 切片测试 / Testcontainers MySQL 集成测试 |
 
 ```
 浏览器 ⇄ REST API (登录/社区/管理)  ┐
@@ -84,6 +120,7 @@ docker compose up -d          # 拉取镜像，起 MySQL + 应用（自带 healt
 │       ├── common/        统一响应 / 异常 / 权限位
 │       └── util/          JWT / 邀请码工具
 ├── docs/                  设计文档与实现计划
+├── deploy/                k3s / Argo CD GitOps 部署清单
 ├── tools/                 便携 Maven + MySQL（不入库）
 └── data/                  MySQL 数据目录（不入库）
 ```

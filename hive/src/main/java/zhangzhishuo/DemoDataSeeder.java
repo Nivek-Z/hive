@@ -9,6 +9,7 @@ import zhangkaiwen.ChannelService;
 import zhangkaiwen.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -28,21 +29,28 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final HiveService hiveService;
     private final ChannelService channelService;
     private final MessageService messageService;
+    private final boolean demoDataEnabled;
 
     public DemoDataSeeder(UserMapper userMapper, HiveMemberMapper memberMapper,
                           PasswordEncoder passwordEncoder,
                           HiveService hiveService, ChannelService channelService,
-                          MessageService messageService) {
+                          MessageService messageService,
+                          @Value("${hive.demo-data.enabled:true}") boolean demoDataEnabled) {
         this.userMapper = userMapper;
         this.memberMapper = memberMapper;
         this.passwordEncoder = passwordEncoder;
         this.hiveService = hiveService;
         this.channelService = channelService;
         this.messageService = messageService;
+        this.demoDataEnabled = demoDataEnabled;
     }
 
     @Override
     public void run(String... args) {
+        if (!demoDataEnabled) {
+            logger.info("演示数据初始化已关闭");
+            return;
+        }
         if (userMapper.count() > 0) {
             return;
         }

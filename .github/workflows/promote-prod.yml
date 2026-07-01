@@ -1,0 +1,66 @@
+name: Promote Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "GHCR image tag to deploy to production, for example sha-abc1234"
+        required: true
+        type: string
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update production image tag
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ["IMAGE_TAG"]
+          if not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
+              raise SystemExit(f"Invalid image tag: {tag}")
+
+          path = Path("deploy/k8s/overlays/prod/kustomization.yaml")
+          lines = path.read_text(encoding="utf-8").splitlines()
+          updated = []
+          replaced = False
+          for line in lines:
+              if not replaced and line.strip().startswith("newTag:"):
+                  indent = line[:len(line) - len(line.lstrip())]
+                  updated.append(f"{indent}newTag: {tag}")
+                  replaced = True
+              else:
+                  updated.append(line)
+          if not replaced:
+              raise SystemExit("newTag not found in prod kustomization")
+          path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+          PY
+
+      - name: Commit production promotion
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/k8s/overlays/prod/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "Production overlay already points at ${IMAGE_TAG}."
+            exit 0
+          fi
+          git commit -m "chore: promote prod image ${IMAGE_TAG} [skip ci]"
+          git push origin HEAD:main

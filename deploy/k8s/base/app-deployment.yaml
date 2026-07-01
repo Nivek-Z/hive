@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hive-app
+  labels:
+    app.kubernetes.io/name: hive
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hive
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hive
+        app.kubernetes.io/component: app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: hive-app
+          image: ghcr.io/nivek-z/hive:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: HIVE_DB_HOST
+              value: hive-mysql
+            - name: HIVE_DB_PORT
+              value: "3306"
+            - name: HIVE_DB_NAME
+              value: hive_db
+            - name: HIVE_DB_USER
+              value: root
+            - name: HIVE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hive-secrets
+                  key: mysql-root-password
+            - name: HIVE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hive-secrets
+                  key: jwt-secret
+            - name: HIVE_UPLOAD_DIR
+              value: /app/uploads
+            - name: HIVE_SQL_INIT_MODE
+              value: always
+            - name: HIVE_DEMO_DATA_ENABLED
+              value: "true"
+            - name: TZ
+              value: Asia/Shanghai
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: hive-uploads

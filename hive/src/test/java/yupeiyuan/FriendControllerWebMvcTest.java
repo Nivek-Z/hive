@@ -1,11 +1,10 @@
-package zhangzhishuo;
+package yupeiyuan;
 
 import jiangminzhi.AuthInterceptor;
 import jiangminzhi.JwtUtil;
 import jiangminzhi.WebConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -15,13 +14,10 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import support.TestWebMvcApplication;
+import zhangzhishuo.GlobalExceptionHandler;
 
-import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -30,11 +26,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(HiveController.class)
+@WebMvcTest(FriendController.class)
 @Import({WebConfig.class, AuthInterceptor.class, GlobalExceptionHandler.class})
-@ContextConfiguration(classes = {TestWebMvcApplication.class, HiveController.class})
+@ContextConfiguration(classes = {TestWebMvcApplication.class, FriendController.class})
 @TestPropertySource(properties = "hive.upload-dir=${java.io.tmpdir}/hive-test-uploads")
-class HiveControllerIntegrationTest {
+class FriendControllerWebMvcTest {
 
     private static final String TOKEN = "test-token";
 
@@ -42,7 +38,7 @@ class HiveControllerIntegrationTest {
     private MockMvc mvc;
 
     @MockitoBean
-    private HiveService hiveService;
+    private FriendService friendService;
 
     @MockitoBean
     private JwtUtil jwtUtil;
@@ -54,35 +50,26 @@ class HiveControllerIntegrationTest {
     }
 
     @Test
-    void createPassesAuthenticatedUidAndRequestBodyToService() throws Exception {
-        when(hiveService.create(eq(42L), any(HiveReq.class))).thenReturn(new HiveDetailVO(
-                10L, "Course Hive", "demo", "#abcdef", 42L, 1, 0L, List.of(), List.of(), List.of()));
-
-        mvc.perform(post("/api/hives")
+    void sendRequestUsesCurrentUidAndRequestUsername() throws Exception {
+        mvc.perform(post("/api/friends/requests")
                         .header("Authorization", "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Course Hive\",\"description\":\"demo\",\"iconColor\":\"#abcdef\"}"))
+                        .content("{\"username\":\"bob\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.id").value(10))
-                .andExpect(jsonPath("$.data.name").value("Course Hive"));
+                .andExpect(jsonPath("$.code").value(0));
 
-        ArgumentCaptor<HiveReq> req = ArgumentCaptor.forClass(HiveReq.class);
-        verify(hiveService).create(eq(42L), req.capture());
-        assertEquals("Course Hive", req.getValue().name());
-        assertEquals("demo", req.getValue().description());
-        assertEquals("#abcdef", req.getValue().iconColor());
+        verify(friendService).sendRequest(42L, "bob");
     }
 
     @Test
-    void createRejectsInvalidBodyBeforeServiceCall() throws Exception {
-        mvc.perform(post("/api/hives")
+    void sendRequestRejectsBlankUsernameBeforeServiceCall() throws Exception {
+        mvc.perform(post("/api/friends/requests")
                         .header("Authorization", "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"\",\"iconColor\":\"blue\"}"))
+                        .content("{\"username\":\"\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1));
 
-        verifyNoInteractions(hiveService);
+        verifyNoInteractions(friendService);
     }
 }
