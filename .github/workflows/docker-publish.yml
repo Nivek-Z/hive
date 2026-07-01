@@ -2,7 +2,7 @@ name: Build & Publish Docker image
 
 on:
   push:
-    branches: [main]
+    branches: [codex/script-test-gitops]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -79,7 +79,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Update test environment image tag
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/codex/script-test-gitops'
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
         shell: bash
@@ -112,4 +112,4 @@ jobs:
             exit 0
           fi
           git commit -m "ci: deploy test image ${IMAGE_TAG} [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:codex/script-test-gitops

@@ -42,7 +42,7 @@ mvn -f hive/pom.xml spring-boot:run
 ## 🐳 Docker 部署
 
 无需本机装 JDK / Maven / MySQL，只要有 Docker 即可一键部署。镜像由 **GitHub Actions** 自动构建并推送到
-GHCR（`ghcr.io/nivek-z/hive`）：每次推送到 `main` 或打 `v*` 版本标签时触发（见 `.github/workflows/docker-publish.yml`）。
+GHCR（`ghcr.io/nivek-z/hive`）：每次推送到部署分支 `codex/script-test-gitops` 或打 `v*` 版本标签时触发（见 `.github/workflows/docker-publish.yml`）。
 
 在任意装了 Docker 的机器上：
 
@@ -86,7 +86,7 @@ kubectl apply -f deploy/argocd/hive-test.yaml
 kubectl apply -f deploy/argocd/hive-prod.yaml
 ```
 
-CI 行为：功能分支和 PR 只运行后端测试；合并到 `main` 后构建并推送 GHCR 镜像，同时更新测试环境 overlay。
+CI 行为：普通功能分支和 PR 只运行后端测试；推送到部署分支 `codex/script-test-gitops` 后构建并推送 GHCR 镜像，同时更新测试环境 overlay。
 生产发布在 GitHub Actions 手动运行 `Promote Production`，输入要发布的镜像 tag 后更新 prod overlay，由 Argo CD 同步。
 
 ## 🏗️ 技术栈与架构

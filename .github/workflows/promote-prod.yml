@@ -15,10 +15,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout main
+      - name: Checkout deployment branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: codex/script-test-gitops
 
       - name: Update production image tag
         env:
@@ -63,4 +63,4 @@ jobs:
             exit 0
           fi
           git commit -m "chore: promote prod image ${IMAGE_TAG} [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:codex/script-test-gitops
