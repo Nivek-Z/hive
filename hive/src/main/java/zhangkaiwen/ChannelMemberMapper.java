@@ -19,7 +19,7 @@ public interface ChannelMemberMapper {
     int countMember(@Param("channelId") long channelId, @Param("userId") long userId);
 
     @Select("SELECT user_id FROM channel_members WHERE channel_id = #{channelId}")
-    List<Long> listUserIds(long channelId);
+    List<Long> listUserIds(@Param("channelId") long channelId);
 
     /** 两人之间已存在的 DM 频道 */
     @Select("SELECT c.* FROM channels c " +
@@ -48,5 +48,5 @@ public interface ChannelMemberMapper {
             "JOIN users u ON u.id = o.user_id " +
             "WHERE c.type = 'DM' " +
             "ORDER BY COALESCE((SELECT MAX(m2.id) FROM messages m2 WHERE m2.channel_id = c.id), 0) DESC")
-    List<DmVO> listDms(long uid);
+    List<DmVO> listDms(@Param("uid") long uid);
 }

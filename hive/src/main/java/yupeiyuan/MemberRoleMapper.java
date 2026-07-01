@@ -18,7 +18,7 @@ public interface MemberRoleMapper {
                @Param("roleId") long roleId);
 
     @Select("SELECT * FROM member_roles WHERE hive_id = #{hiveId}")
-    List<MemberRole> listByHive(long hiveId);
+    List<MemberRole> listByHive(@Param("hiveId") long hiveId);
 
     /** 成员退出/被踢时清理其在该蜂巢的所有角色 */
     @Delete("DELETE FROM member_roles WHERE hive_id = #{hiveId} AND user_id = #{userId}")

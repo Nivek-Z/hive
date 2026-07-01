@@ -15,14 +15,14 @@ public interface RoleMapper {
 
     @Insert("INSERT INTO roles(hive_id, name, color, permissions, position, is_default) " +
             "VALUES(#{hiveId}, #{name}, #{color}, #{permissions}, #{position}, #{isDefault})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(Role role);
 
     @Select("SELECT * FROM roles WHERE id = #{id}")
-    Role findById(long id);
+    Role findById(@Param("id") long id);
 
     @Select("SELECT * FROM roles WHERE hive_id = #{hiveId} ORDER BY position DESC, id")
-    List<Role> listByHive(long hiveId);
+    List<Role> listByHive(@Param("hiveId") long hiveId);
 
     /**
      * 一条 SQL 计算成员生效权限：默认角色 ∪ 已分配角色 的 permissions 按位 OR。
@@ -42,5 +42,5 @@ public interface RoleMapper {
                @Param("permissions") long permissions);
 
     @Delete("DELETE FROM roles WHERE id = #{id}")
-    int delete(long id);
+    int delete(@Param("id") long id);
 }

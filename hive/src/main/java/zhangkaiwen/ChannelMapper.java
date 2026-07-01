@@ -15,19 +15,19 @@ public interface ChannelMapper {
 
     @Insert("INSERT INTO channels(hive_id, parent_id, type, name, topic, position) " +
             "VALUES(#{hiveId}, #{parentId}, #{type}, #{name}, #{topic}, #{position})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(Channel channel);
 
     @Select("SELECT * FROM channels WHERE id = #{id}")
-    Channel findById(long id);
+    Channel findById(@Param("id") long id);
 
     @Select("SELECT * FROM channels WHERE hive_id = #{hiveId} " +
             "ORDER BY COALESCE(parent_id, 0), position, id")
-    List<Channel> listByHive(long hiveId);
+    List<Channel> listByHive(@Param("hiveId") long hiveId);
 
     /** 蜂巢的第一个文字频道（系统消息默认落点） */
     @Select("SELECT * FROM channels WHERE hive_id = #{hiveId} AND type = 'TEXT' ORDER BY id LIMIT 1")
-    Channel firstTextChannel(long hiveId);
+    Channel firstTextChannel(@Param("hiveId") long hiveId);
 
     @Update("UPDATE channels SET name = #{name}, topic = #{topic}, position = #{position} " +
             "WHERE id = #{id}")
@@ -42,5 +42,5 @@ public interface ChannelMapper {
                          @Param("newParentId") Long newParentId);
 
     @Delete("DELETE FROM channels WHERE id = #{id}")
-    int delete(long id);
+    int delete(@Param("id") long id);
 }

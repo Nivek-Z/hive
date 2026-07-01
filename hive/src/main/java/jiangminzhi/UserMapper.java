@@ -12,7 +12,7 @@ public interface UserMapper {
 
     @Insert("INSERT INTO users(username, password_hash, nickname, avatar_color) " +
             "VALUES(#{username}, #{passwordHash}, #{nickname}, #{avatarColor})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(User user);
 
     @Select("SELECT * FROM users WHERE username = #{username}")

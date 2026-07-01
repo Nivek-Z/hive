@@ -24,7 +24,7 @@ public interface ReactionMapper {
                @Param("emoji") String emoji);
 
     @Select("SELECT message_id, emoji, user_id FROM reactions WHERE message_id = #{messageId} ORDER BY id")
-    List<ReactionRow> listByMessage(long messageId);
+    List<ReactionRow> listByMessage(@Param("messageId") long messageId);
 
     /** 历史分页批量取回应：用消息 id 区间避免动态 IN 拼接 */
     @Select("SELECT r.message_id, r.emoji, r.user_id FROM reactions r " +
@@ -36,8 +36,8 @@ public interface ReactionMapper {
                                   @Param("maxId") long maxId);
 
     @Select("SELECT COUNT(*) FROM reactions WHERE message_id = #{messageId}")
-    int countOnMessage(long messageId);
+    int countOnMessage(@Param("messageId") long messageId);
 
     @Select("SELECT COUNT(*) FROM reactions WHERE user_id = #{uid}")
-    long countByUser(long uid);
+    long countByUser(@Param("uid") long uid);
 }

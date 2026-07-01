@@ -15,17 +15,17 @@ public interface HiveMapper {
 
     @Insert("INSERT INTO hives(name, description, icon_color, owner_id) " +
             "VALUES(#{name}, #{description}, #{iconColor}, #{ownerId})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(Hive hive);
 
     @Select("SELECT * FROM hives WHERE id = #{id}")
-    Hive findById(long id);
+    Hive findById(@Param("id") long id);
 
     /** 我加入的所有蜂巢（按加入时间排序） */
     @Select("SELECT h.* FROM hives h " +
             "JOIN hive_members m ON m.hive_id = h.id " +
             "WHERE m.user_id = #{userId} ORDER BY m.joined_at")
-    List<Hive> listByUserId(long userId);
+    List<Hive> listByUserId(@Param("userId") long userId);
 
     @Update("UPDATE hives SET name = #{name}, description = #{description}, icon_color = #{iconColor} " +
             "WHERE id = #{id}")
@@ -36,5 +36,5 @@ public interface HiveMapper {
 
     /** 删除蜂巢（频道/消息/成员/角色/邀请码全部级联删除） */
     @Delete("DELETE FROM hives WHERE id = #{id}")
-    int delete(long id);
+    int delete(@Param("id") long id);
 }

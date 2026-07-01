@@ -19,7 +19,7 @@ public interface HiveMemberMapper {
     HiveMember find(@Param("hiveId") long hiveId, @Param("userId") long userId);
 
     @Select("SELECT COUNT(*) FROM hive_members WHERE hive_id = #{hiveId}")
-    int countByHive(long hiveId);
+    int countByHive(@Param("hiveId") long hiveId);
 
     /** 成员列表（连表带出用户资料 + 是否巢主标记） */
     @Select("SELECT m.user_id, u.username, u.nickname, m.hive_nickname, " +
@@ -30,11 +30,11 @@ public interface HiveMemberMapper {
             "JOIN hives h ON h.id = m.hive_id " +
             "WHERE m.hive_id = #{hiveId} " +
             "ORDER BY owner DESC, m.joined_at")
-    List<MemberVO> listByHive(long hiveId);
+    List<MemberVO> listByHive(@Param("hiveId") long hiveId);
 
     /** 蜂巢全部成员 id（WebSocket 广播用） */
     @Select("SELECT user_id FROM hive_members WHERE hive_id = #{hiveId}")
-    List<Long> listUserIds(long hiveId);
+    List<Long> listUserIds(@Param("hiveId") long hiveId);
 
     /** 与某用户相关的所有用户 id：同巢成员 ∪ 好友（上下线 PRESENCE 广播范围） */
     @Select("SELECT DISTINCT user_id FROM hive_members " +
@@ -43,7 +43,7 @@ public interface HiveMemberMapper {
             "SELECT IF(requester_id = #{userId}, addressee_id, requester_id) FROM friendships " +
             "WHERE status = 'ACCEPTED' AND (requester_id = #{userId} OR addressee_id = #{userId}) " +
             "UNION SELECT #{userId}")
-    List<Long> listRelatedUserIds(long userId);
+    List<Long> listRelatedUserIds(@Param("userId") long userId);
 
     @Update("UPDATE hive_members SET muted_until = #{until} " +
             "WHERE hive_id = #{hiveId} AND user_id = #{userId}")

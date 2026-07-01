@@ -26,14 +26,14 @@ public interface MessageMapper {
 
     @Insert("INSERT INTO messages(channel_id, sender_id, type, content, reply_to_id) " +
             "VALUES(#{channelId}, #{senderId}, #{type}, #{content}, #{replyToId})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(Message message);
 
     @Select("SELECT * FROM messages WHERE id = #{id}")
-    Message findById(long id);
+    Message findById(@Param("id") long id);
 
     @Select(BASE_SELECT + "WHERE m.id = #{id}")
-    MessageVO findVOById(long id);
+    MessageVO findVOById(@Param("id") long id);
 
     /** 游标分页：取 before 之前最新 limit 条（DESC，service 层反转为正序） */
     @Select(BASE_SELECT +
@@ -44,7 +44,7 @@ public interface MessageMapper {
                             @Param("limit") int limit);
 
     @Update("UPDATE messages SET deleted = 1 WHERE id = #{id}")
-    int softDelete(long id);
+    int softDelete(@Param("id") long id);
 
     /** 一条 SQL 统计某用户在某蜂巢内每个频道的未读数 */
     @Select("SELECT m.channel_id AS channelId, COUNT(*) AS count " +
@@ -58,17 +58,17 @@ public interface MessageMapper {
     // ---------- 成就判定用计数 ----------
 
     @Select("SELECT COUNT(*) FROM messages WHERE sender_id = #{uid} AND deleted = 0")
-    long countBySender(long uid);
+    long countBySender(@Param("uid") long uid);
 
     @Select("SELECT COUNT(*) FROM messages WHERE sender_id = #{uid} AND deleted = 0 " +
             "AND created_at >= CURDATE()")
-    long countBySenderToday(long uid);
+    long countBySenderToday(@Param("uid") long uid);
 
     /** 最近 7 个自然日中有发言的天数（=7 即连续一周打卡） */
     @Select("SELECT COUNT(DISTINCT DATE(created_at)) FROM messages " +
             "WHERE sender_id = #{uid} AND deleted = 0 " +
             "AND created_at >= CURDATE() - INTERVAL 6 DAY")
-    int countActiveDaysLast7(long uid);
+    int countActiveDaysLast7(@Param("uid") long uid);
 
     // ---------- 数据可视化 ----------
 
@@ -77,14 +77,14 @@ public interface MessageMapper {
             "WHERE sender_id = #{uid} AND deleted = 0 " +
             "AND created_at >= CURDATE() - INTERVAL 364 DAY " +
             "GROUP BY DATE(created_at) ORDER BY date")
-    List<HeatRow> heatmap(long uid);
+    List<HeatRow> heatmap(@Param("uid") long uid);
 
     /** 蜂巢近 7 日逐日消息量 */
     @Select("SELECT DATE(m.created_at) AS date, COUNT(*) AS count FROM messages m " +
             "JOIN channels c ON c.id = m.channel_id AND c.hive_id = #{hiveId} " +
             "WHERE m.deleted = 0 AND m.created_at >= CURDATE() - INTERVAL 6 DAY " +
             "GROUP BY DATE(m.created_at) ORDER BY date")
-    List<HeatRow> hiveDaily(long hiveId);
+    List<HeatRow> hiveDaily(@Param("hiveId") long hiveId);
 
     /** 蜂巢发言排行（前 5） */
     @Select("SELECT u.nickname AS name, COUNT(*) AS count FROM messages m " +
@@ -92,7 +92,7 @@ public interface MessageMapper {
             "JOIN users u ON u.id = m.sender_id " +
             "WHERE m.deleted = 0 GROUP BY m.sender_id, u.nickname " +
             "ORDER BY count DESC LIMIT 5")
-    List<NameCount> hiveTopSpeakers(long hiveId);
+    List<NameCount> hiveTopSpeakers(@Param("hiveId") long hiveId);
 
     /** ngram 中文全文检索（NATURAL LANGUAGE MODE） */
     @Select("SELECT m.id, m.channel_id, c.name AS channel_name, u.nickname AS sender_nickname, " +

@@ -3,6 +3,7 @@ package zhangzhishuo;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -13,14 +14,14 @@ public interface InviteMapper {
 
     @Insert("INSERT INTO invites(code, hive_id, creator_id, max_uses, expires_at) " +
             "VALUES(#{code}, #{hiveId}, #{creatorId}, #{maxUses}, #{expiresAt})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(Invite invite);
 
     @Select("SELECT * FROM invites WHERE code = #{code}")
-    Invite findByCode(String code);
+    Invite findByCode(@Param("code") String code);
 
     @Select("SELECT * FROM invites WHERE hive_id = #{hiveId} ORDER BY id DESC")
-    List<Invite> listByHive(long hiveId);
+    List<Invite> listByHive(@Param("hiveId") long hiveId);
 
     /**
      * 原子核销：次数与有效期校验放在 SQL 条件里，
@@ -30,5 +31,5 @@ public interface InviteMapper {
             "WHERE id = #{id} " +
             "AND (max_uses = 0 OR used_count < max_uses) " +
             "AND (expires_at IS NULL OR expires_at > NOW())")
-    int consume(long id);
+    int consume(@Param("id") long id);
 }
