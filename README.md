@@ -86,7 +86,8 @@ kubectl apply -f deploy/argocd/hive-test.yaml
 kubectl apply -f deploy/argocd/hive-prod.yaml
 ```
 
-CI 行为：普通功能分支和 PR 只运行后端测试；推送到部署分支 `codex/script-test-gitops` 后构建并推送 GHCR 镜像，同时更新测试环境 overlay。
+CI 行为：唯一的 `CI/CD` workflow 按顺序执行 `Unit and Web MVC tests` → `MySQL integration tests` → `Build and publish image`；集成测试 job 会跳过 Surefire 单测，只运行 Failsafe 的 `*IT`。
+普通功能分支和 PR 只运行前两个测试 job；推送到部署分支 `codex/script-test-gitops` 后才构建并推送 GHCR 镜像，同时更新测试环境 overlay。
 生产发布在 GitHub Actions 手动运行 `Promote Production`，输入要发布的镜像 tag 后更新 prod overlay，由 Argo CD 同步。
 
 ## 🏗️ 技术栈与架构
