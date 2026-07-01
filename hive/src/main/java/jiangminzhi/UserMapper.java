@@ -16,10 +16,10 @@ public interface UserMapper {
     int insert(User user);
 
     @Select("SELECT * FROM users WHERE username = #{username}")
-    User findByUsername(String username);
+    User findByUsername(@Param("username") String username);
 
     @Select("SELECT * FROM users WHERE id = #{id}")
-    User findById(long id);
+    User findById(@Param("id") long id);
 
     @Select("SELECT COUNT(*) FROM users")
     long count();
@@ -38,5 +38,5 @@ public interface UserMapper {
     int updatePassword(@Param("id") long id, @Param("hash") String hash);
 
     @Update("UPDATE users SET last_seen_at = NOW() WHERE id = #{id}")
-    int touchLastSeen(long id);
+    int touchLastSeen(@Param("id") long id);
 }
