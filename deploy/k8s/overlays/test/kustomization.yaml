@@ -5,7 +5,7 @@ resources:
   - ../../base
 images:
   - name: ghcr.io/nivek-z/hive
-    newTag: latest
+    newTag: sha-533ba19
 patches:
   - path: app-env-patch.yaml
   - target:
