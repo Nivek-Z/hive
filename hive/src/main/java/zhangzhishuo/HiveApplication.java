@@ -1,5 +1,6 @@
 package zhangzhishuo;
 
+import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -9,7 +10,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Java 程序设计大作业
  */
 @SpringBootApplication(scanBasePackages = {"jiangminzhi", "yupeiyuan", "zhangkaiwen", "zhangzhishuo"})
-@MapperScan({"jiangminzhi", "yupeiyuan", "zhangkaiwen", "zhangzhishuo"})
+@MapperScan(
+        basePackages = {"jiangminzhi", "yupeiyuan", "zhangkaiwen", "zhangzhishuo"},
+        annotationClass = Mapper.class)
 public class HiveApplication {
 
     public static void main(String[] args) {
