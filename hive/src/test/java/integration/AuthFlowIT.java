@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jiangminzhi.User;
 import jiangminzhi.UserMapper;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -11,13 +12,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.event.ApplicationEventsTestExecutionListener;
+import org.springframework.test.context.event.EventPublishingTestExecutionListener;
+import org.springframework.test.context.support.DependencyInjectionTestExecutionListener;
+import org.springframework.test.context.support.DirtiesContextBeforeModesTestExecutionListener;
+import org.springframework.test.context.support.DirtiesContextTestExecutionListener;
+import org.springframework.test.context.web.ServletTestExecutionListener;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import zhangzhishuo.HiveApplication;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,25 +34,38 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(classes = HiveApplication.class)
 @AutoConfigureMockMvc
-@Testcontainers
 @TestPropertySource(properties = {
         "hive.demo-data.enabled=false",
         "hive.upload-dir=${java.io.tmpdir}/hive-it-uploads",
         "spring.sql.init.mode=always"
 })
+@TestExecutionListeners(
+        listeners = {
+                ServletTestExecutionListener.class,
+                DirtiesContextBeforeModesTestExecutionListener.class,
+                ApplicationEventsTestExecutionListener.class,
+                DependencyInjectionTestExecutionListener.class,
+                DirtiesContextTestExecutionListener.class,
+                EventPublishingTestExecutionListener.class
+        },
+        mergeMode = TestExecutionListeners.MergeMode.REPLACE_DEFAULTS)
 class AuthFlowIT {
 
-    @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("hive_it")
-            .withUsername("hive")
-            .withPassword("hive");
+    private static IntegrationMysqlEnvironment mysql;
 
     @DynamicPropertySource
     static void mysqlProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
-        registry.add("spring.datasource.username", MYSQL::getUsername);
-        registry.add("spring.datasource.password", MYSQL::getPassword);
+        if (mysql == null) {
+            mysql = IntegrationMysqlEnvironment.start();
+        }
+        mysql.register(registry);
+    }
+
+    @AfterAll
+    static void stopMysql() {
+        if (mysql != null) {
+            mysql.close();
+        }
     }
 
     @Autowired
